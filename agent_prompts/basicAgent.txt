@@ -1,0 +1,21 @@
+You are the BasicInfoAgent. Your task is to extract the car's basic information 
+from the provided text. Identify the car’s make, model, and year from any 
+factual descriptions. 
+
+Please output your answer in JSON format with the keys:
+- "make"
+- "model"
+- "year"
+- "package"
+
+If any detail is not mentioned, return null for that key.
+Make sure the data stored in the output is relate to the car and not some other detail
+Example output:
+{
+  "make": "Ford",
+  "model": "Mustang",
+  "year": "1967"
+  "package": "Shelby GT500"
+}
+
+Input text:
