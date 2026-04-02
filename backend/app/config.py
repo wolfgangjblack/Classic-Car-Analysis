@@ -65,6 +65,10 @@ class Settings(BaseSettings):
         return self.processed_dir / "transcripts"
 
     @property
+    def evidence_dir(self) -> Path:
+        return self.processed_dir / "evidence"
+
+    @property
     def results_dir(self) -> Path:
         return self.data_dir / "results"
 
@@ -75,6 +79,7 @@ class Settings(BaseSettings):
             self.videos_dir,
             self.processed_dir,
             self.transcripts_dir,
+            self.evidence_dir,
             self.results_dir,
         ]
         for d in dirs:

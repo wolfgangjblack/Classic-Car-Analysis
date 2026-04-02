@@ -1,5 +1,6 @@
 import os
 import json
+import shutil
 import time
 import traceback
 from datetime import datetime
@@ -177,6 +178,28 @@ def _run_vision_and_valuation(job_id, frames_dir, vehicle_info, current_cost):
         vision_service = VisionService()
         condition = vision_service.analyze_vehicle_condition(frames_dir, vehicle_info)
 
+        evidence_mapping = condition.get_evidence_frame_paths()
+        if evidence_mapping:
+            settings = get_settings()
+            evidence_dest = settings.evidence_dir / job_id
+            evidence_dest.mkdir(parents=True, exist_ok=True)
+            copied = {}
+            for idx, src_path in evidence_mapping.items():
+                dest_name = f"evidence_{idx:03d}.jpg"
+                dest_path = evidence_dest / dest_name
+                try:
+                    shutil.copy2(src_path, str(dest_path))
+                    copied[idx] = dest_name
+                except Exception as e:
+                    print(f"Failed to copy evidence frame {src_path}: {e}")
+
+            for category in ("good", "bad"):
+                for obs in condition.observations.get(category, []):
+                    if isinstance(obs, dict):
+                        idx = obs.get("image_index", 0)
+                        if idx in copied:
+                            obs["evidence_frame"] = copied[idx]
+
         condition_report_json = json.dumps(condition.to_dict())
         condition_score = condition.overall_score
         cost += condition.cost
@@ -185,8 +208,25 @@ def _run_vision_and_valuation(job_id, frames_dir, vehicle_info, current_cost):
         timer.add_detail("good_observations", len(condition.observations.get("good", [])))
         timer.add_detail("bad_observations", len(condition.observations.get("bad", [])))
         timer.add_detail("images_analyzed", condition.images_analyzed)
+        timer.add_detail("evidence_frames_copied", len(evidence_mapping))
         timer.add_detail("cost", condition.cost)
         timer.add_detail("overall_assessment", condition.overall_assessment)
+
+    vision_summary_addendum = ""
+    if condition.overall_assessment:
+        vision_summary_addendum = (
+            f"\n\nVisual Condition Assessment (from video frames):\n"
+            f"Overall Score: {condition_score}/5\n"
+            f"{condition.overall_assessment}"
+        )
+        good_obs = condition.observations.get("good", [])
+        bad_obs = condition.observations.get("bad", [])
+        if good_obs:
+            items = [o["text"] if isinstance(o, dict) else o for o in good_obs[:5]]
+            vision_summary_addendum += "\nPositive: " + "; ".join(items)
+        if bad_obs:
+            items = [o["text"] if isinstance(o, dict) else o for o in bad_obs[:5]]
+            vision_summary_addendum += "\nIssues: " + "; ".join(items)
 
     update_job_results(
         job_id,
@@ -194,6 +234,16 @@ def _run_vision_and_valuation(job_id, frames_dir, vehicle_info, current_cost):
         condition_score=condition_score,
         cost=cost,
     )
+
+    if vision_summary_addendum:
+        db = get_db_session()
+        try:
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job and job.summary:
+                job.summary = job.summary.rstrip() + vision_summary_addendum
+                db.commit()
+        finally:
+            db.close()
 
     # --- Market Valuation ---
     make = vehicle_info.get("make", "")
@@ -203,32 +253,40 @@ def _run_vision_and_valuation(job_id, frames_dir, vehicle_info, current_cost):
     if make and model:
         update_job_status(job_id, JobStatus.VALUATION.value, 80, "Looking up market value")
 
-        with PhaseTimer(job_id, "valuation", "Market valuation and bid calculation") as timer:
-            valuation_service = ValuationService()
-            valuation_result = valuation_service.evaluate(
-                make=make,
-                model=model,
-                year=year,
-                condition_score=condition_score,
-                condition_summary=condition.overall_assessment,
+        try:
+            with PhaseTimer(job_id, "valuation", "Market valuation and bid calculation") as timer:
+                valuation_service = ValuationService()
+                valuation_result = valuation_service.evaluate(
+                    make=make,
+                    model=model,
+                    year=year,
+                    condition_score=condition_score,
+                    condition_summary=condition.overall_assessment,
+                )
+                cost += valuation_result.cost
+
+                timer.add_detail("market_value_low", valuation_result.market_value_low)
+                timer.add_detail("market_value_high", valuation_result.market_value_high)
+                timer.add_detail("bid_range_low", valuation_result.bid_range_low)
+                timer.add_detail("bid_range_high", valuation_result.bid_range_high)
+                timer.add_detail("cost", valuation_result.cost)
+
+            update_job_results(
+                job_id,
+                market_value_low=valuation_result.market_value_low,
+                market_value_high=valuation_result.market_value_high,
+                bid_range_low=valuation_result.bid_range_low,
+                bid_range_high=valuation_result.bid_range_high,
+                valuation_notes=valuation_result.valuation_notes,
+                cost=cost,
             )
-            cost += valuation_result.cost
-
-            timer.add_detail("market_value_low", valuation_result.market_value_low)
-            timer.add_detail("market_value_high", valuation_result.market_value_high)
-            timer.add_detail("bid_range_low", valuation_result.bid_range_low)
-            timer.add_detail("bid_range_high", valuation_result.bid_range_high)
-            timer.add_detail("cost", valuation_result.cost)
-
-        update_job_results(
-            job_id,
-            market_value_low=valuation_result.market_value_low,
-            market_value_high=valuation_result.market_value_high,
-            bid_range_low=valuation_result.bid_range_low,
-            bid_range_high=valuation_result.bid_range_high,
-            valuation_notes=valuation_result.valuation_notes,
-            cost=cost,
-        )
+        except Exception as e:
+            add_log_entry(
+                job_id, "valuation", "failed",
+                f"Market valuation failed (non-fatal): {str(e)}",
+                details={"error_type": type(e).__name__, "traceback": traceback.format_exc()},
+            )
+            print(f"Valuation failed (non-fatal): {e}")
     else:
         add_log_entry(
             job_id, "valuation", "warning",

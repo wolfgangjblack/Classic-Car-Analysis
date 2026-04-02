@@ -854,4 +854,123 @@ footer {
         flex-direction: column;
         gap: 0.25rem;
     }
+
+    .job-actions {
+        flex-wrap: wrap;
+    }
+}
+
+/* Dropdown */
+.dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 4px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+    min-width: 140px;
+    overflow: hidden;
+}
+
+.dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 1rem;
+    border: none;
+    background: none;
+    text-align: left;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.dropdown-item:hover {
+    background: var(--bg-color);
+}
+
+/* Danger button */
+.btn-danger {
+    background-color: transparent;
+    border: 1px solid var(--error-color);
+    color: var(--error-color);
+}
+
+.btn-danger:hover {
+    background-color: rgba(220, 38, 38, 0.08);
+}
+
+/* Evidence thumbnails */
+.obs-with-evidence {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    padding: 0.375rem 0;
+}
+
+.evidence-thumb {
+    width: 72px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 1px solid var(--border-color);
+    flex-shrink: 0;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.evidence-thumb:hover {
+    transform: scale(1.08);
+    box-shadow: var(--shadow);
+}
+
+/* Lightbox */
+.lightbox-content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 90vw;
+    max-height: 85vh;
+    animation: modalSlideIn 0.2s ease;
+}
+
+.lightbox-content img {
+    max-width: 100%;
+    max-height: 75vh;
+    border-radius: 8px;
+    box-shadow: var(--shadow-lg);
+}
+
+.lightbox-close {
+    position: absolute;
+    top: -12px;
+    right: -12px;
+    background: var(--card-bg);
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow);
+    z-index: 1;
+}
+
+.lightbox-caption {
+    margin-top: 0.75rem;
+    color: white;
+    text-align: center;
+    font-size: 0.9rem;
+    max-width: 600px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
