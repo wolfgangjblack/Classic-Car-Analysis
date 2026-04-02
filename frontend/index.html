@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classic Car Video Analyzer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Classic Car Video Analyzer</h1>
+            <p class="subtitle">AI-powered analysis of classic car videos</p>
+        </header>
+
+        <main>
+            <!-- Upload Section -->
+            <section class="upload-section">
+                <div class="upload-zone" id="dropZone">
+                    <div class="upload-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                    </div>
+                    <p>Drag and drop a video file here</p>
+                    <p class="upload-hint">or click to select a file</p>
+                    <input type="file" id="fileInput" accept="video/*" hidden>
+                </div>
+
+                <div class="url-input-section">
+                    <span class="divider-text">OR</span>
+                    <div class="url-input-wrapper">
+                        <input type="url" id="urlInput" placeholder="Enter YouTube or video URL">
+                        <button id="submitUrl" class="btn btn-primary">Analyze</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Jobs Section -->
+            <section class="jobs-section">
+                <h2>Recent Jobs</h2>
+                <div id="jobsList" class="jobs-list">
+                    <p class="empty-state">No jobs yet. Upload a video or enter a URL to get started.</p>
+                </div>
+            </section>
+
+            <!-- Summary Section -->
+            <section class="summary-section" id="summarySection" style="display: none;">
+                <h2>Analysis Summary</h2>
+                <div class="summary-card" id="summaryCard">
+                    <div class="vehicle-info">
+                        <div class="info-row">
+                            <span class="label">Make:</span>
+                            <span class="value" id="summaryMake">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Model:</span>
+                            <span class="value" id="summaryModel">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Year:</span>
+                            <span class="value" id="summaryYear">-</span>
+                        </div>
+                    </div>
+                    <div class="summary-text" id="summaryText"></div>
+
+                    <!-- Condition Assessment -->
+                    <div class="condition-section" id="conditionSection" style="display: none;">
+                        <h3>Condition Assessment</h3>
+                        <div class="condition-header">
+                            <div class="condition-score-badge" id="conditionBadge">
+                                <span class="score-number" id="conditionScoreNum">-</span>
+                                <span class="score-label">/ 5</span>
+                            </div>
+                            <p class="condition-assessment" id="conditionAssessment"></p>
+                        </div>
+                        <div class="condition-areas" id="conditionAreas"></div>
+                        <div class="observations-grid" id="observationsGrid" style="display: none;">
+                            <div class="observations-good">
+                                <h4>Positive Observations</h4>
+                                <ul id="goodObservations"></ul>
+                            </div>
+                            <div class="observations-bad">
+                                <h4>Issues Found</h4>
+                                <ul id="badObservations"></ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Market Valuation -->
+                    <div class="valuation-section" id="valuationSection" style="display: none;">
+                        <h3>Market Valuation</h3>
+                        <div class="valuation-grid">
+                            <div class="valuation-card">
+                                <span class="valuation-label">Market Value Range</span>
+                                <span class="valuation-range" id="marketRange">-</span>
+                            </div>
+                            <div class="valuation-card bid-card">
+                                <span class="valuation-label">Suggested Starting Bid</span>
+                                <span class="valuation-range bid-range" id="bidRange">-</span>
+                            </div>
+                        </div>
+                        <div class="bid-bar-container" id="bidBarContainer" style="display: none;">
+                            <div class="bid-bar">
+                                <div class="bid-bar-market" id="bidBarMarket"></div>
+                                <div class="bid-bar-bid" id="bidBarBid"></div>
+                            </div>
+                            <div class="bid-bar-labels">
+                                <span id="bidBarLow">$0</span>
+                                <span id="bidBarHigh">$0</span>
+                            </div>
+                        </div>
+                        <p class="valuation-notes" id="valuationNotes"></p>
+                    </div>
+
+                    <div class="summary-footer">
+                        <span class="cost" id="summaryCost">Processing cost: $0.00</span>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Powered by OpenAI Whisper and GPT</p>
+        </footer>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Logs Modal -->
+    <div id="logsModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeLogsModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="logsModalTitle">Processing Logs</h3>
+                <button class="modal-close" onclick="closeLogsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="logsContent" class="logs-content">
+                    <p class="empty-state">No logs available</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

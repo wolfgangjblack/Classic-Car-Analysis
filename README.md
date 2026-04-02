@@ -1,169 +1,278 @@
 # Classic Car Analysis Pipeline
-An AI-powered pipeline for analyzing classic car videos, extracting detailed information, and generating comprehensive summaries.
+
+An AI-powered pipeline for analyzing classic car videos -- from YouTube URLs or uploaded files -- that transcribes audio, visually inspects extracted frames for condition, looks up current market values, and suggests a starting bid price range.
 
 ## Project Overview
-This system processes videos of classic cars (typically dealer walkarounds), extracts audio and visual information, and uses AI to generate detailed reports on each vehicle. The pipeline uses speech-to-text transcription and a multi-agent approach to identify key vehicle attributes including:
 
-- Make, model, and year
-- Vehicle condition details
-- Maintenance and service history
-- Accident history and repairs
-- Noteworthy features and options
+This system processes videos of classic cars (typically auction walkarounds or dealer presentations) through a multi-stage AI pipeline:
 
-## System Architecture
-The project consists of two main pipelines:
+1. **Transcription** -- Whisper extracts speech-to-text with timestamps
+2. **Transcript Analysis** -- Multiple AI agents identify make/model/year, condition notes, history, and generate a summary
+3. **Vision Condition Analysis** -- GPT-4o examines extracted video frames to score exterior and interior quality (1-5 per area), tracking good and bad observations
+4. **Market Valuation** -- OpenAI web search looks up current blue book / auction values from Hagerty, Bring a Trailer, and Hemmings
+5. **Bid Price Calculation** -- Condition score adjusts the market value to produce a suggested starting bid range
 
-1. Video Processing Pipeline - Extracts audio, performs transcription, and captures key frames
-2. Text Summarization Pipeline - Analyzes transcripts with specialized AI agents to extract relevant details
+## Architecture
 
-### Pipeline Flow
 ```
-Car Video → Video Processing → Transcription → Agent Analysis → Summary Generation
+┌─────────────────┐     ┌─────────────────┐     ┌──────────────────────────┐
+│   Frontend      │────▶│   FastAPI       │────▶│   Background Workers     │
+│   (HTML/JS)     │     │   Backend       │     │                          │
+└─────────────────┘     └─────────────────┘     │  Download                │
+                               │                │  ▼                       │
+                               ▼                │  Video Processing        │
+                        ┌─────────────────┐     │  (audio + frames)        │
+                        │   SQLite DB     │     │  ▼                       │
+                        │   (Jobs)        │     │  Transcript Analysis     │
+                        └─────────────────┘     │  (multi-agent)           │
+                                                │  ▼                       │
+                                                │  Vision Analysis (GPT-4o)│
+                                                │  ▼                       │
+                                                │  Market Valuation        │
+                                                │  (web search + bid calc) │
+                                                └──────────────────────────┘
 ```
 
-## Getting Started
-### Prerequisites
-- Python 3.12+
-- OpenAI API key
-- FFmpeg installed on your system
-- Required Python libraries (see requirements.txt)
+## Quick Start
 
-### Installation
+### Using Docker (Recommended)
 
 1. Clone the repository:
-```
-Copygit clone https://github.com/yourusername/classic-car-analysis.git
-cd classic-car-analysis
+```bash
+git clone https://github.com/wolfgangjblack/Classic-Car-Analysis.git
+cd Classic-Car-Analysis
 ```
 
-2. Install the required packages:
+2. Create your `.env` file:
+```bash
+cp .env.example .env
+# Edit .env and add your OPENAI_API_KEY
 ```
+
+3. Start the services:
+```bash
+docker-compose up --build
+```
+
+4. Access the application:
+   - Frontend: http://localhost:3000
+   - API: http://localhost:8000
+   - API Docs: http://localhost:8000/docs
+
+### Manual Installation
+
+1. Install system dependencies:
+```bash
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt-get install ffmpeg
+```
+
+2. Install Python dependencies:
+```bash
+cd backend
 pip install -r requirements.txt
 ```
 
-3. Set up your OpenAI API key:
-```
-# For macOS/Linux
-vim ~/.zshrc
-# Add the following line:
-export OPENAI_KEY="your-api-key-here"
-# Save and exit (type ":wq")
-source ~/.zshrc
+3. Set up environment variables:
+```bash
+export OPENAI_API_KEY="your-api-key-here"
 ```
 
-4. Prepare your data directory structure:
-```
-mkdir -p data/videos
-mkdir -p data/processed_videos
-mkdir -p results
+4. Run the API server:
+```bash
+cd backend
+uvicorn app.main:app --reload
 ```
 
 ## Usage
-### Processing Videos
-The system processes videos in two stages:
 
-1. Video Processing: Extracts audio, transcribes speech, and captures frames
+### Web Interface
+
+1. Open http://localhost:3000 in your browser
+2. Either drag-and-drop a video file or enter a YouTube URL
+3. Watch the progress through each phase (download, transcription, analysis, vision inspection, valuation)
+4. View the full results: transcript summary, condition assessment with per-area scores, market value range, and suggested starting bid
+
+![Example output showing condition assessment and market valuation](assets/output_ex.png)
+
+### CLI
+
+The CLI provides direct access to all processing functionality:
+
+```bash
+cd backend
+
+# Process a local video file
+python -m cli.main process /path/to/video.mp4
+
+# Process with custom output directory
+python -m cli.main process video.mp4 --output ./my-output
+
+# Download and process a YouTube video
+python -m cli.main download "https://youtube.com/watch?v=..."
+
+# Generate summary from existing transcript
+python -m cli.main summarize /path/to/transcript.json
+
+# List available transcripts
+python -m cli.main list-transcripts
+
+# Show configuration
+python -m cli.main config
+```
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/videos/upload` | Upload a video file |
+| POST | `/api/videos/url` | Submit a YouTube/video URL |
+| GET | `/api/jobs` | List all jobs |
+| GET | `/api/jobs/{id}` | Get job status and details |
+| GET | `/api/jobs/{id}/summary` | Get job summary, condition, valuation |
+| DELETE | `/api/jobs/{id}` | Delete/cancel a job |
+| GET | `/api/costs` | Get cost report |
+| GET | `/health` | Health check |
+
+## Project Structure
 
 ```
-#python
-from utils import VideoProcessingPipeline
-
-# Initialize the pipeline
-pipeline = VideoProcessingPipeline(
-    model_size="medium",
-    extract_frames_interval=5,
-    output_dir='data/processed_videos'
-)
-
-# Process a single video
-result = pipeline.process_video('data/videos/example.mp4')
-
-# Or batch process multiple videos
-video_paths = ['data/videos/car1.mp4', 'data/videos/car2.mp4']
-results = pipeline.batch_process(video_paths)
+classic-car-analysis/
+├── backend/
+│   ├── app/
+│   │   ├── api/              # FastAPI route handlers
+│   │   ├── core/             # Core processing logic
+│   │   │   ├── agents.py     # AI agent definitions
+│   │   │   ├── nlp_utils.py  # NLP utilities
+│   │   │   ├── valuation.py  # Market value lookup & bid calculation
+│   │   │   ├── video_classes.py  # Data models
+│   │   │   ├── video_pipeline.py # Video processing
+│   │   │   └── vision_analyzer.py # GPT-4o frame condition analysis
+│   │   ├── models/           # Database & Pydantic schemas
+│   │   ├── services/         # Service layer
+│   │   │   ├── agent_service.py    # Transcript analysis orchestration
+│   │   │   ├── valuation_service.py # Market valuation wrapper
+│   │   │   ├── video_service.py    # Video processing wrapper
+│   │   │   └── vision_service.py   # Vision analysis wrapper
+│   │   ├── workers/          # Background task handlers
+│   │   ├── config.py         # Configuration
+│   │   └── main.py           # FastAPI application
+│   ├── cli/                  # Command-line interface
+│   ├── Dockerfile
+│   └── requirements.txt
+├── frontend/
+│   ├── index.html
+│   ├── styles.css
+│   ├── app.js
+│   ├── nginx.conf
+│   └── Dockerfile
+├── agent_prompts/            # AI agent system prompts
+├── data/                     # Processing data (created at runtime)
+├── docker-compose.yml
+├── .env.example
+└── README.md
 ```
 
-2. Text Analysis: Analyzes transcripts and generates summaries
+## Configuration
 
+Configuration is managed through environment variables. See `.env.example` for all available options:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENAI_API_KEY` | OpenAI API key (required) | - |
+| `WHISPER_MODEL_SIZE` | Whisper model size | `medium` |
+| `FRAME_EXTRACT_INTERVAL` | Seconds between frame extractions | `5` |
+| `VISION_MODEL` | OpenAI model for vision analysis | `gpt-4o` |
+| `MAX_VISION_FRAMES` | Max frames sent to vision model | `10` |
+| `MAX_UPLOAD_SIZE_MB` | Maximum upload file size | `500` |
+
+## AI Agents
+
+The system uses specialized AI agents to extract information:
+
+- **BasicAgent**: Extracts make, model, year, and package information
+- **HistoryAgent**: Extracts mileage, owners, accident history, maintenance
+- **ConditionAgent**: Extracts exterior, interior, and mechanical condition (from transcript)
+- **SummaryAgent**: Generates comprehensive vehicle summaries
+- **VisionConditionAgent**: GPT-4o vision analysis of extracted video frames for paint, body, chrome, interior condition scoring (1-5 scale per area)
+
+## Vision Analysis & Market Valuation
+
+After transcript analysis, the pipeline runs two additional phases:
+
+### Vision Condition Analysis
+
+Selects up to 10 evenly-spaced frames from the extracted video frames, encodes them as base64 JPEG, and sends them in a single multi-image request to GPT-4o. The model examines every image and rates 8 condition areas:
+
+| Area | Weight | What the model looks for |
+|------|--------|--------------------------|
+| Exterior Paint | 1.5x | Fading, oxidation, overspray, color match |
+| Body Panels | 1.5x | Dents, dings, ripples, filler, panel gaps |
+| Chrome & Trim | 1.5x | Pitting, peeling, dullness, missing pieces |
+| Wheels & Tires | 1.5x | Curb rash, tire age/tread, wheel finish |
+| Glass | 1.0x | Chips, cracks, cloudiness, seal condition |
+| Interior Seats | 1.0x | Tears, wear, staining, bolster wear |
+| Dashboard | 1.0x | Cracks, warping, gauge clarity |
+| Carpet & Headliner | 1.0x | Sagging, staining, wear patterns |
+
+Each area is scored 1-5 (1=poor, 5=excellent). The overall score is a weighted average with exterior areas weighted 1.5x (more important for auction presentation). The model also produces running lists of positive and negative observations.
+
+### Market Valuation & Bid Calculation
+
+Uses OpenAI's Responses API with built-in `web_search` to query current market values from Hagerty, Bring a Trailer, Hemmings, and Kelley Blue Book. The response is parsed for a price range, and the condition score is used to calculate a starting bid:
+
+| Condition Score | Bid Range (% of market value) |
+|-----------------|-------------------------------|
+| 5 (Excellent) | 95-105% |
+| 4 (Good) | 80-95% |
+| 3 (Fair) | 60-80% |
+| 2 (Below Avg) | 40-60% |
+| 1 (Poor) | 25-45% |
+
+Values between integer scores are linearly interpolated.
+
+## Cost Tracking
+
+The system tracks API usage costs for each processed video. View costs via:
+- Web UI: Displayed in summary cards
+- CLI: Shown after processing
+- API: `GET /api/costs`
+
+## Development
+
+### Running Tests
+
+```bash
+cd backend
+pytest
 ```
-#python
-from utils import AgentPipeline
 
-# Initialize the agent pipeline
-agent_pipe = AgentPipeline(agents_dir='agent_prompts/')
+### Code Style
 
-# Process a single transcript
-agent_pipe.process_transcript('data/processed_videos/transcripts/example.json')
+```bash
+# Format code
+black backend/
 
-# Or process multiple transcripts
-transcript_paths = [
-    'data/processed_videos/transcripts/car1.json',
-    'data/processed_videos/transcripts/car2.json'
-]
-agent_pipe.process_all_transcripts(transcript_paths)
-
-# Save the generated summaries
-agent_pipe.save_summaries(output_dir='results/')
-
-```
-### Example Notebooks
-The project includes two main Jupyter notebooks that demonstrate the complete workflow:
-
-1. video_processing_pipeline.ipynb - Processes videos, extracts audio, and generates transcripts
-2. summarize_text_pipeline.ipynb - Analyzes transcripts and generates vehicle summaries
-
-## System Components
-### Video Processing Pipeline
-The VideoProcessingPipeline class handles:
-
-- Audio extraction from video
-- Speech-to-text transcription using Whisper
-- Subtitle generation and video captioning
-- Key frame extraction at specified intervals
-
-### Agent Pipeline
-The AgentPipeline class manages specialized AI agents that:
-
-- Process transcript segments to extract relevant information
-- Identify vehicle details from spoken content
-- Generate comprehensive summaries
-
-### Key Utilities
-
-- agents.py - Defines the agent classes and interactions
-- nlp_utils.py - Provides text processing utilities
-- video_classes.py - Defines data structures for video processing
-
-### Cost Monitoring
-The system tracks token usage and API costs to help monitor expenses:
-```
-# Get cost report
-print(agent_pipe.get_cost_report())
+# Type checking
+mypy backend/
 ```
 
 ## Future Development
 
-- Pricing model integration
-- Bidding recommendation system
-- Dealer guidance for video capture
-- Enhanced visual analysis of vehicle condition
-- VIN and CarFax API calls
+- [x] Pricing model integration (market valuation via web search)
+- [x] Bidding recommendation system (condition-adjusted bid range)
+- [x] Enhanced visual analysis of vehicle condition (GPT-4o vision)
+- [ ] Dealer guidance for video capture
+- [ ] VIN and CarFax API integration
+- [ ] Multi-language support
 
-## Project Structure
-```
-├── agent_prompts/            # System prompts for specialized AI agents
-├── data/
-│   ├── videos/               # Input car videos
-│   └── processed_videos/     # Processed outputs (transcripts, frames, etc.)
-├── notebooks/
-│   ├── summarize_text_pipeline.ipynb
-│   └── video_processing_pipeline.ipynb
-├── results/                  # Generated summaries
-├── utils/
-│   ├── __init__.py
-│   ├── agents.py             # Agent definitions and pipeline
-│   ├── nlp_utils.py          # NLP utility functions
-│   ├── video_classes.py      # Data models
-│   └── video_pipeline.py     # Video processing pipeline
-└── requirements.txt
-```
+## License
+
+This project is licensed under the terms included in the LICENSE file.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
