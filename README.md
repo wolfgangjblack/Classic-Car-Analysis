@@ -1,30 +1,36 @@
 # Classic Car Analysis Pipeline
 
-An AI-powered pipeline for analyzing classic car videos, extracting detailed information, and generating comprehensive summaries.
+An AI-powered pipeline for analyzing classic car videos -- from YouTube URLs or uploaded files -- that transcribes audio, visually inspects extracted frames for condition, looks up current market values, and suggests a starting bid price range.
 
 ## Project Overview
 
-This system processes videos of classic cars (typically dealer walkarounds), extracts audio and visual information, and uses AI to generate detailed reports on each vehicle. The pipeline uses speech-to-text transcription and a multi-agent approach to identify key vehicle attributes including:
+This system processes videos of classic cars (typically auction walkarounds or dealer presentations) through a multi-stage AI pipeline:
 
-- Make, model, and year
-- Vehicle condition details
-- Maintenance and service history
-- Accident history and repairs
-- Noteworthy features and options
+1. **Transcription** -- Whisper extracts speech-to-text with timestamps
+2. **Transcript Analysis** -- Multiple AI agents identify make/model/year, condition notes, history, and generate a summary
+3. **Vision Condition Analysis** -- GPT-4o examines extracted video frames to score exterior and interior quality (1-5 per area), tracking good and bad observations
+4. **Market Valuation** -- OpenAI web search looks up current blue book / auction values from Hagerty, Bring a Trailer, and Hemmings
+5. **Bid Price Calculation** -- Condition score adjusts the market value to produce a suggested starting bid range
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Frontend      │────▶│   FastAPI       │────▶│   Background    │
-│   (HTML/JS)     │     │   Backend       │     │   Workers       │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-                               │                        │
-                               ▼                        ▼
-                        ┌─────────────────┐     ┌─────────────────┐
-                        │   SQLite DB     │     │   Video/Agent   │
-                        │   (Jobs)        │     │   Processing    │
-                        └─────────────────┘     └─────────────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌──────────────────────────┐
+│   Frontend      │────▶│   FastAPI       │────▶│   Background Workers     │
+│   (HTML/JS)     │     │   Backend       │     │                          │
+└─────────────────┘     └─────────────────┘     │  Download                │
+                               │                │  ▼                       │
+                               ▼                │  Video Processing        │
+                        ┌─────────────────┐     │  (audio + frames)        │
+                        │   SQLite DB     │     │  ▼                       │
+                        │   (Jobs)        │     │  Transcript Analysis     │
+                        └─────────────────┘     │  (multi-agent)           │
+                                                │  ▼                       │
+                                                │  Vision Analysis (GPT-4o)│
+                                                │  ▼                       │
+                                                │  Market Valuation        │
+                                                │  (web search + bid calc) │
+                                                └──────────────────────────┘
 ```
 
 ## Quick Start
@@ -87,8 +93,10 @@ uvicorn app.main:app --reload
 
 1. Open http://localhost:3000 in your browser
 2. Either drag-and-drop a video file or enter a YouTube URL
-3. Wait for processing to complete
-4. View the generated summary
+3. Watch the progress through each phase (download, transcription, analysis, vision inspection, valuation)
+4. View the full results: transcript summary, condition assessment with per-area scores, market value range, and suggested starting bid
+
+![Example output showing condition assessment and market valuation](assets/output_ex.png)
 
 ### CLI
 
@@ -124,7 +132,7 @@ python -m cli.main config
 | POST | `/api/videos/url` | Submit a YouTube/video URL |
 | GET | `/api/jobs` | List all jobs |
 | GET | `/api/jobs/{id}` | Get job status and details |
-| GET | `/api/jobs/{id}/summary` | Get job summary |
+| GET | `/api/jobs/{id}/summary` | Get job summary, condition, valuation |
 | DELETE | `/api/jobs/{id}` | Delete/cancel a job |
 | GET | `/api/costs` | Get cost report |
 | GET | `/health` | Health check |
@@ -145,6 +153,10 @@ classic-car-analysis/
 │   │   │   └── vision_analyzer.py # GPT-4o frame condition analysis
 │   │   ├── models/           # Database & Pydantic schemas
 │   │   ├── services/         # Service layer
+│   │   │   ├── agent_service.py    # Transcript analysis orchestration
+│   │   │   ├── valuation_service.py # Market valuation wrapper
+│   │   │   ├── video_service.py    # Video processing wrapper
+│   │   │   └── vision_service.py   # Vision analysis wrapper
 │   │   ├── workers/          # Background task handlers
 │   │   ├── config.py         # Configuration
 │   │   └── main.py           # FastAPI application
@@ -191,9 +203,36 @@ The system uses specialized AI agents to extract information:
 
 After transcript analysis, the pipeline runs two additional phases:
 
-1. **Vision Condition Analysis**: Selects evenly-spaced frames from the video, encodes them as base64, and sends them to GPT-4o for visual inspection. The model rates 8 condition areas (exterior paint, body panels, chrome/trim, wheels/tires, glass, seats, dashboard, carpet/headliner) on a 1-5 scale and produces good/bad observation lists.
+### Vision Condition Analysis
 
-2. **Market Valuation**: Uses OpenAI's Responses API with built-in web search to look up current market values from sources like Hagerty, Bring a Trailer, and Hemmings. The condition score is then used to calculate a suggested starting bid range (higher condition = bid closer to market value).
+Selects up to 10 evenly-spaced frames from the extracted video frames, encodes them as base64 JPEG, and sends them in a single multi-image request to GPT-4o. The model examines every image and rates 8 condition areas:
+
+| Area | Weight | What the model looks for |
+|------|--------|--------------------------|
+| Exterior Paint | 1.5x | Fading, oxidation, overspray, color match |
+| Body Panels | 1.5x | Dents, dings, ripples, filler, panel gaps |
+| Chrome & Trim | 1.5x | Pitting, peeling, dullness, missing pieces |
+| Wheels & Tires | 1.5x | Curb rash, tire age/tread, wheel finish |
+| Glass | 1.0x | Chips, cracks, cloudiness, seal condition |
+| Interior Seats | 1.0x | Tears, wear, staining, bolster wear |
+| Dashboard | 1.0x | Cracks, warping, gauge clarity |
+| Carpet & Headliner | 1.0x | Sagging, staining, wear patterns |
+
+Each area is scored 1-5 (1=poor, 5=excellent). The overall score is a weighted average with exterior areas weighted 1.5x (more important for auction presentation). The model also produces running lists of positive and negative observations.
+
+### Market Valuation & Bid Calculation
+
+Uses OpenAI's Responses API with built-in `web_search` to query current market values from Hagerty, Bring a Trailer, Hemmings, and Kelley Blue Book. The response is parsed for a price range, and the condition score is used to calculate a starting bid:
+
+| Condition Score | Bid Range (% of market value) |
+|-----------------|-------------------------------|
+| 5 (Excellent) | 95-105% |
+| 4 (Good) | 80-95% |
+| 3 (Fair) | 60-80% |
+| 2 (Below Avg) | 40-60% |
+| 1 (Poor) | 25-45% |
+
+Values between integer scores are linearly interpolated.
 
 ## Cost Tracking
 
