@@ -58,6 +58,13 @@ class JobDetailResponse(JobResponse):
     make: Optional[str] = None
     model: Optional[str] = None
     year: Optional[str] = None
+    condition_report: Optional[str] = None
+    condition_score: Optional[float] = None
+    market_value_low: Optional[float] = None
+    market_value_high: Optional[float] = None
+    bid_range_low: Optional[float] = None
+    bid_range_high: Optional[float] = None
+    valuation_notes: Optional[str] = None
     cost: float = 0.0
     logs: Optional[List[LogEntry]] = None
 

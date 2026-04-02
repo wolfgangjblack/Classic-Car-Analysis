@@ -13,6 +13,8 @@ services:
       - AGENT_PROMPTS_DIR=/app/agent_prompts
       - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-medium}
       - FRAME_EXTRACT_INTERVAL=${FRAME_EXTRACT_INTERVAL:-5}
+      - VISION_MODEL=${VISION_MODEL:-gpt-4o}
+      - MAX_VISION_FRAMES=${MAX_VISION_FRAMES:-10}
       - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-500}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

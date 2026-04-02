@@ -65,6 +65,56 @@
                         </div>
                     </div>
                     <div class="summary-text" id="summaryText"></div>
+
+                    <!-- Condition Assessment -->
+                    <div class="condition-section" id="conditionSection" style="display: none;">
+                        <h3>Condition Assessment</h3>
+                        <div class="condition-header">
+                            <div class="condition-score-badge" id="conditionBadge">
+                                <span class="score-number" id="conditionScoreNum">-</span>
+                                <span class="score-label">/ 5</span>
+                            </div>
+                            <p class="condition-assessment" id="conditionAssessment"></p>
+                        </div>
+                        <div class="condition-areas" id="conditionAreas"></div>
+                        <div class="observations-grid" id="observationsGrid" style="display: none;">
+                            <div class="observations-good">
+                                <h4>Positive Observations</h4>
+                                <ul id="goodObservations"></ul>
+                            </div>
+                            <div class="observations-bad">
+                                <h4>Issues Found</h4>
+                                <ul id="badObservations"></ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Market Valuation -->
+                    <div class="valuation-section" id="valuationSection" style="display: none;">
+                        <h3>Market Valuation</h3>
+                        <div class="valuation-grid">
+                            <div class="valuation-card">
+                                <span class="valuation-label">Market Value Range</span>
+                                <span class="valuation-range" id="marketRange">-</span>
+                            </div>
+                            <div class="valuation-card bid-card">
+                                <span class="valuation-label">Suggested Starting Bid</span>
+                                <span class="valuation-range bid-range" id="bidRange">-</span>
+                            </div>
+                        </div>
+                        <div class="bid-bar-container" id="bidBarContainer" style="display: none;">
+                            <div class="bid-bar">
+                                <div class="bid-bar-market" id="bidBarMarket"></div>
+                                <div class="bid-bar-bid" id="bidBarBid"></div>
+                            </div>
+                            <div class="bid-bar-labels">
+                                <span id="bidBarLow">$0</span>
+                                <span id="bidBarHigh">$0</span>
+                            </div>
+                        </div>
+                        <p class="valuation-notes" id="valuationNotes"></p>
+                    </div>
+
                     <div class="summary-footer">
                         <span class="cost" id="summaryCost">Processing cost: $0.00</span>
                     </div>

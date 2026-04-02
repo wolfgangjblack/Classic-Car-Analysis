@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     whisper_model_size: str = Field(default="medium", alias="WHISPER_MODEL_SIZE")
     frame_extract_interval: int = Field(default=5, alias="FRAME_EXTRACT_INTERVAL")
 
+    # Vision Analysis
+    vision_model: str = Field(default="gpt-4o", alias="VISION_MODEL")
+    max_vision_frames: int = Field(default=10, alias="MAX_VISION_FRAMES")
+
     # API
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")

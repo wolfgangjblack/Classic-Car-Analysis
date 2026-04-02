@@ -94,6 +94,13 @@ async def get_job(job_id: str, db: Session = Depends(get_db)):
         make=job.make,
         model=job.model,
         year=job.year,
+        condition_report=job.condition_report,
+        condition_score=job.condition_score,
+        market_value_low=job.market_value_low,
+        market_value_high=job.market_value_high,
+        bid_range_low=job.bid_range_low,
+        bid_range_high=job.bid_range_high,
+        valuation_notes=job.valuation_notes,
         cost=job.cost or 0.0,
         logs=parse_logs(job.logs)
     )
@@ -133,7 +140,14 @@ async def get_job_summary(job_id: str, db: Session = Depends(get_db)):
         "model": job.model,
         "year": job.year,
         "summary": job.summary,
-        "cost": job.cost or 0.0
+        "condition_report": job.condition_report,
+        "condition_score": job.condition_score,
+        "market_value_low": job.market_value_low,
+        "market_value_high": job.market_value_high,
+        "bid_range_low": job.bid_range_low,
+        "bid_range_high": job.bid_range_high,
+        "valuation_notes": job.valuation_notes,
+        "cost": job.cost or 0.0,
     }
 
 

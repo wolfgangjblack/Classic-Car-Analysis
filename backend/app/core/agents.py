@@ -257,7 +257,16 @@ class AgentPipeline:
 
         transcript_cost = 0.0
         for agent in self.agents['processing']:
-            clean_data = {k: list(set(v)) for k, v in agent.data.items()}
+            clean_data = {}
+            for k, v in agent.data.items():
+                try:
+                    clean_data[k] = list(set(v))
+                except TypeError:
+                    seen = []
+                    for item in v:
+                        if item not in seen:
+                            seen.append(item)
+                    clean_data[k] = seen
             self.data[transcript_name]['processing_results'][agent.name] = clean_data
             transcript_cost += agent.get_cost()
 

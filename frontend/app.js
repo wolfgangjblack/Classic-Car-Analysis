@@ -212,6 +212,8 @@ function getStatusClass(status) {
         'processing_video': 'status-processing',
         'transcribing': 'status-processing',
         'analyzing': 'status-processing',
+        'vision_analysis': 'status-processing',
+        'valuation': 'status-processing',
         'complete': 'status-complete',
         'failed': 'status-failed',
         'cancelled': 'status-failed'
@@ -226,6 +228,8 @@ function formatStatus(status) {
         'processing_video': 'Processing Video',
         'transcribing': 'Transcribing',
         'analyzing': 'Analyzing',
+        'vision_analysis': 'Inspecting Condition',
+        'valuation': 'Market Valuation',
         'complete': 'Complete',
         'failed': 'Failed',
         'cancelled': 'Cancelled'
@@ -267,19 +271,144 @@ async function viewSummary(jobId) {
         if (!response.ok) throw new Error('Failed to load summary');
 
         const job = await response.json();
-        
+
         document.getElementById('summaryMake').textContent = job.make || '-';
         document.getElementById('summaryModel').textContent = job.model || '-';
         document.getElementById('summaryYear').textContent = job.year || '-';
         document.getElementById('summaryText').textContent = job.summary || 'No summary available';
         document.getElementById('summaryCost').textContent = `Processing cost: $${(job.cost || 0).toFixed(4)}`;
-        
+
+        renderConditionSection(job);
+        renderValuationSection(job);
+
         summarySection.style.display = 'block';
         summarySection.scrollIntoView({ behavior: 'smooth' });
 
     } catch (error) {
         showToast(`Failed to load summary: ${error.message}`, 'error');
     }
+}
+
+function renderConditionSection(job) {
+    const section = document.getElementById('conditionSection');
+    if (!job.condition_report) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = 'block';
+    let report;
+    try {
+        report = JSON.parse(job.condition_report);
+    } catch {
+        section.style.display = 'none';
+        return;
+    }
+
+    const score = job.condition_score || report.overall_score || 0;
+    const badge = document.getElementById('conditionBadge');
+    document.getElementById('conditionScoreNum').textContent = score.toFixed(1);
+
+    badge.className = 'condition-score-badge';
+    if (score >= 4.5) badge.classList.add('score-excellent');
+    else if (score >= 3.5) badge.classList.add('score-good');
+    else if (score >= 2.5) badge.classList.add('score-fair');
+    else if (score >= 1.5) badge.classList.add('score-below-avg');
+    else badge.classList.add('score-poor');
+
+    document.getElementById('conditionAssessment').textContent =
+        report.overall_assessment || '';
+
+    const areasContainer = document.getElementById('conditionAreas');
+    const areaLabels = {
+        exterior_paint: 'Exterior Paint',
+        body_panels: 'Body Panels',
+        chrome_trim: 'Chrome & Trim',
+        wheels_tires: 'Wheels & Tires',
+        glass: 'Glass',
+        interior_seats: 'Interior Seats',
+        dashboard: 'Dashboard',
+        carpet_headliner: 'Carpet & Headliner',
+    };
+
+    let areasHtml = '';
+    if (report.area_scores) {
+        for (const [key, data] of Object.entries(report.area_scores)) {
+            const areaScore = data.score || 0;
+            const label = areaLabels[key] || key.replace(/_/g, ' ');
+            const scoreText = areaScore > 0 ? `${areaScore}/5` : 'N/A';
+            areasHtml += `
+                <div class="area-item" title="${escapeHtml(data.notes || '')}">
+                    <span class="area-name">${escapeHtml(label)}</span>
+                    <span class="area-score area-score-${areaScore}">${scoreText}</span>
+                </div>
+            `;
+        }
+    }
+    areasContainer.innerHTML = areasHtml;
+
+    const obsGrid = document.getElementById('observationsGrid');
+    const goodList = document.getElementById('goodObservations');
+    const badList = document.getElementById('badObservations');
+
+    if (report.observations) {
+        const goods = report.observations.good || [];
+        const bads = report.observations.bad || [];
+        if (goods.length > 0 || bads.length > 0) {
+            obsGrid.style.display = 'grid';
+            goodList.innerHTML = goods.map(o => `<li>${escapeHtml(o)}</li>`).join('');
+            badList.innerHTML = bads.map(o => `<li>${escapeHtml(o)}</li>`).join('');
+        } else {
+            obsGrid.style.display = 'none';
+        }
+    } else {
+        obsGrid.style.display = 'none';
+    }
+}
+
+function formatPrice(value) {
+    if (!value || value <= 0) return '-';
+    return '$' + Math.round(value).toLocaleString();
+}
+
+function renderValuationSection(job) {
+    const section = document.getElementById('valuationSection');
+    if (!job.market_value_low && !job.bid_range_low) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = 'block';
+
+    const mvLow = job.market_value_low || 0;
+    const mvHigh = job.market_value_high || 0;
+    const bidLow = job.bid_range_low || 0;
+    const bidHigh = job.bid_range_high || 0;
+
+    document.getElementById('marketRange').textContent =
+        mvLow > 0 ? `${formatPrice(mvLow)} - ${formatPrice(mvHigh)}` : '-';
+    document.getElementById('bidRange').textContent =
+        bidLow > 0 ? `${formatPrice(bidLow)} - ${formatPrice(bidHigh)}` : '-';
+
+    const barContainer = document.getElementById('bidBarContainer');
+    if (mvHigh > 0 && bidHigh > 0) {
+        barContainer.style.display = 'block';
+        const maxVal = mvHigh * 1.1;
+        const marketBar = document.getElementById('bidBarMarket');
+        const bidBar = document.getElementById('bidBarBid');
+
+        marketBar.style.left = `${(mvLow / maxVal) * 100}%`;
+        marketBar.style.width = `${((mvHigh - mvLow) / maxVal) * 100}%`;
+        bidBar.style.left = `${(bidLow / maxVal) * 100}%`;
+        bidBar.style.width = `${((bidHigh - bidLow) / maxVal) * 100}%`;
+
+        document.getElementById('bidBarLow').textContent = formatPrice(Math.min(mvLow, bidLow));
+        document.getElementById('bidBarHigh').textContent = formatPrice(mvHigh);
+    } else {
+        barContainer.style.display = 'none';
+    }
+
+    document.getElementById('valuationNotes').textContent = job.valuation_notes || '';
 }
 
 // Delete Job
@@ -435,6 +564,8 @@ function formatPhase(phase) {
         'download': 'Download',
         'video_processing': 'Video Processing',
         'ai_analysis': 'AI Analysis',
+        'vision_analysis': 'Vision Condition Analysis',
+        'valuation': 'Market Valuation',
         'complete': 'Complete',
         'error': 'Error'
     };

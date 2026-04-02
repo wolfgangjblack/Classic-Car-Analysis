@@ -139,8 +139,10 @@ classic-car-analysis/
 │   │   ├── core/             # Core processing logic
 │   │   │   ├── agents.py     # AI agent definitions
 │   │   │   ├── nlp_utils.py  # NLP utilities
+│   │   │   ├── valuation.py  # Market value lookup & bid calculation
 │   │   │   ├── video_classes.py  # Data models
-│   │   │   └── video_pipeline.py # Video processing
+│   │   │   ├── video_pipeline.py # Video processing
+│   │   │   └── vision_analyzer.py # GPT-4o frame condition analysis
 │   │   ├── models/           # Database & Pydantic schemas
 │   │   ├── services/         # Service layer
 │   │   ├── workers/          # Background task handlers
@@ -171,6 +173,8 @@ Configuration is managed through environment variables. See `.env.example` for a
 | `OPENAI_API_KEY` | OpenAI API key (required) | - |
 | `WHISPER_MODEL_SIZE` | Whisper model size | `medium` |
 | `FRAME_EXTRACT_INTERVAL` | Seconds between frame extractions | `5` |
+| `VISION_MODEL` | OpenAI model for vision analysis | `gpt-4o` |
+| `MAX_VISION_FRAMES` | Max frames sent to vision model | `10` |
 | `MAX_UPLOAD_SIZE_MB` | Maximum upload file size | `500` |
 
 ## AI Agents
@@ -179,8 +183,17 @@ The system uses specialized AI agents to extract information:
 
 - **BasicAgent**: Extracts make, model, year, and package information
 - **HistoryAgent**: Extracts mileage, owners, accident history, maintenance
-- **ConditionAgent**: Extracts exterior, interior, and mechanical condition
+- **ConditionAgent**: Extracts exterior, interior, and mechanical condition (from transcript)
 - **SummaryAgent**: Generates comprehensive vehicle summaries
+- **VisionConditionAgent**: GPT-4o vision analysis of extracted video frames for paint, body, chrome, interior condition scoring (1-5 scale per area)
+
+## Vision Analysis & Market Valuation
+
+After transcript analysis, the pipeline runs two additional phases:
+
+1. **Vision Condition Analysis**: Selects evenly-spaced frames from the video, encodes them as base64, and sends them to GPT-4o for visual inspection. The model rates 8 condition areas (exterior paint, body panels, chrome/trim, wheels/tires, glass, seats, dashboard, carpet/headliner) on a 1-5 scale and produces good/bad observation lists.
+
+2. **Market Valuation**: Uses OpenAI's Responses API with built-in web search to look up current market values from sources like Hagerty, Bring a Trailer, and Hemmings. The condition score is then used to calculate a suggested starting bid range (higher condition = bid closer to market value).
 
 ## Cost Tracking
 
@@ -210,10 +223,10 @@ mypy backend/
 
 ## Future Development
 
-- [ ] Pricing model integration
-- [ ] Bidding recommendation system
+- [x] Pricing model integration (market valuation via web search)
+- [x] Bidding recommendation system (condition-adjusted bid range)
+- [x] Enhanced visual analysis of vehicle condition (GPT-4o vision)
 - [ ] Dealer guidance for video capture
-- [ ] Enhanced visual analysis of vehicle condition
 - [ ] VIN and CarFax API integration
 - [ ] Multi-language support
 

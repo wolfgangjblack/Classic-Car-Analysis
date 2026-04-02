@@ -10,6 +10,8 @@ from ..models.db import Job, JobStatus, get_engine, create_session_factory
 from ..services.downloader import VideoDownloader
 from ..services.video_service import VideoService
 from ..services.agent_service import AgentService
+from ..services.vision_service import VisionService
+from ..services.valuation_service import ValuationService
 
 
 def get_db_session():
@@ -66,17 +68,50 @@ def update_job_status(job_id: str, status: str, progress: int = None, current_st
         db.close()
 
 
-def update_job_results(job_id: str, summary: str, make: str, model: str, year: str, cost: float):
-    """Update job with results"""
+def update_job_results(
+    job_id: str,
+    summary: str = None,
+    make: str = None,
+    model: str = None,
+    year: str = None,
+    cost: float = None,
+    condition_report: str = None,
+    condition_score: float = None,
+    market_value_low: float = None,
+    market_value_high: float = None,
+    bid_range_low: float = None,
+    bid_range_high: float = None,
+    valuation_notes: str = None,
+):
+    """Update job with results. Only updates fields that are not None."""
     db = get_db_session()
     try:
         job = db.query(Job).filter(Job.id == job_id).first()
         if job:
-            job.summary = summary
-            job.make = make
-            job.model = model
-            job.year = year
-            job.cost = cost
+            if summary is not None:
+                job.summary = summary
+            if make is not None:
+                job.make = make
+            if model is not None:
+                job.model = model
+            if year is not None:
+                job.year = year
+            if cost is not None:
+                job.cost = cost
+            if condition_report is not None:
+                job.condition_report = condition_report
+            if condition_score is not None:
+                job.condition_score = condition_score
+            if market_value_low is not None:
+                job.market_value_low = market_value_low
+            if market_value_high is not None:
+                job.market_value_high = market_value_high
+            if bid_range_low is not None:
+                job.bid_range_low = bid_range_low
+            if bid_range_high is not None:
+                job.bid_range_high = bid_range_high
+            if valuation_notes is not None:
+                job.valuation_notes = valuation_notes
             db.commit()
     finally:
         db.close()
@@ -125,6 +160,84 @@ class PhaseTimer:
         self.details[key] = value
 
 
+def _run_vision_and_valuation(job_id, frames_dir, vehicle_info, current_cost):
+    """
+    Shared logic for vision analysis and market valuation phases.
+    Returns (condition_report_json, condition_score, valuation_result, total_cost).
+    """
+    cost = current_cost
+    condition_report_json = None
+    condition_score = 0.0
+    valuation_result = None
+
+    # --- Vision Analysis ---
+    update_job_status(job_id, JobStatus.VISION_ANALYSIS.value, 60, "Analyzing vehicle condition from frames")
+
+    with PhaseTimer(job_id, "vision_analysis", "Vision-based condition analysis") as timer:
+        vision_service = VisionService()
+        condition = vision_service.analyze_vehicle_condition(frames_dir, vehicle_info)
+
+        condition_report_json = json.dumps(condition.to_dict())
+        condition_score = condition.overall_score
+        cost += condition.cost
+
+        timer.add_detail("condition_score", condition_score)
+        timer.add_detail("good_observations", len(condition.observations.get("good", [])))
+        timer.add_detail("bad_observations", len(condition.observations.get("bad", [])))
+        timer.add_detail("images_analyzed", condition.images_analyzed)
+        timer.add_detail("cost", condition.cost)
+        timer.add_detail("overall_assessment", condition.overall_assessment)
+
+    update_job_results(
+        job_id,
+        condition_report=condition_report_json,
+        condition_score=condition_score,
+        cost=cost,
+    )
+
+    # --- Market Valuation ---
+    make = vehicle_info.get("make", "")
+    model = vehicle_info.get("model", "")
+    year = vehicle_info.get("year", "")
+
+    if make and model:
+        update_job_status(job_id, JobStatus.VALUATION.value, 80, "Looking up market value")
+
+        with PhaseTimer(job_id, "valuation", "Market valuation and bid calculation") as timer:
+            valuation_service = ValuationService()
+            valuation_result = valuation_service.evaluate(
+                make=make,
+                model=model,
+                year=year,
+                condition_score=condition_score,
+                condition_summary=condition.overall_assessment,
+            )
+            cost += valuation_result.cost
+
+            timer.add_detail("market_value_low", valuation_result.market_value_low)
+            timer.add_detail("market_value_high", valuation_result.market_value_high)
+            timer.add_detail("bid_range_low", valuation_result.bid_range_low)
+            timer.add_detail("bid_range_high", valuation_result.bid_range_high)
+            timer.add_detail("cost", valuation_result.cost)
+
+        update_job_results(
+            job_id,
+            market_value_low=valuation_result.market_value_low,
+            market_value_high=valuation_result.market_value_high,
+            bid_range_low=valuation_result.bid_range_low,
+            bid_range_high=valuation_result.bid_range_high,
+            valuation_notes=valuation_result.valuation_notes,
+            cost=cost,
+        )
+    else:
+        add_log_entry(
+            job_id, "valuation", "warning",
+            "Skipping valuation: make/model not identified from transcript"
+        )
+
+    return condition_report_json, condition_score, valuation_result, cost
+
+
 def process_video_task(job_id: str):
     """Background task to process an uploaded video."""
     settings = get_settings()
@@ -165,11 +278,12 @@ def process_video_task(job_id: str):
         with PhaseTimer(job_id, "video_processing", "Video processing pipeline") as timer:
             result = video_service.process_video(video_path, video_progress)
             transcript_path = result.transcript_json_path
+            frames_dir = result.frames_dir
             timer.add_detail("transcript_path", transcript_path)
             timer.add_detail("captioned_video", result.captioned_video_path)
             timer.add_detail("duration_seconds", result.duration_seconds)
+            timer.add_detail("frames_dir", frames_dir)
 
-        # Log the transcript content
         transcript_text = ""
         try:
             with open(transcript_path, 'r') as f:
@@ -181,18 +295,18 @@ def process_video_task(job_id: str):
         except Exception as e:
             add_log_entry(job_id, "transcript", "warning", f"Could not read transcript: {str(e)}")
 
-        update_job_status(job_id, JobStatus.ANALYZING.value, 55, "Analyzing transcript")
+        update_job_status(job_id, JobStatus.ANALYZING.value, 40, "Analyzing transcript")
 
         with PhaseTimer(job_id, "ai_analysis", "AI transcript analysis") as timer:
             agent_service = AgentService()
 
             def agent_progress(step, progress):
                 if step == "processing_chunks":
-                    update_job_status(job_id, JobStatus.ANALYZING.value, 60, "Processing transcript chunks")
+                    update_job_status(job_id, JobStatus.ANALYZING.value, 45, "Processing transcript chunks")
                 elif step == "generating_summary":
-                    update_job_status(job_id, JobStatus.ANALYZING.value, 85, "Generating summary")
+                    update_job_status(job_id, JobStatus.ANALYZING.value, 52, "Generating summary")
                 elif step == "complete":
-                    update_job_status(job_id, JobStatus.ANALYZING.value, 95, "Analysis complete")
+                    update_job_status(job_id, JobStatus.ANALYZING.value, 58, "Transcript analysis complete")
 
             agent_service.process_transcript(transcript_path, agent_progress)
 
@@ -200,7 +314,7 @@ def process_video_task(job_id: str):
             summary = agent_service.get_summary(transcript_name)
             cost = agent_service.get_cost(transcript_name)
             vehicle_info = agent_service.extract_vehicle_info(transcript_name)
-            
+
             timer.add_detail("cost", cost)
             timer.add_detail("vehicle_info", vehicle_info)
             timer.add_detail("summary", summary)
@@ -211,13 +325,31 @@ def process_video_task(job_id: str):
             make=vehicle_info.get("make"),
             model=vehicle_info.get("model"),
             year=vehicle_info.get("year"),
-            cost=cost
+            cost=cost,
         )
+
+        condition_report_json, condition_score, valuation_result, cost = _run_vision_and_valuation(
+            job_id, frames_dir, vehicle_info, cost
+        )
+
+        complete_details = {
+            "total_cost": cost,
+            "vehicle": vehicle_info,
+            "condition_score": condition_score,
+        }
+        if valuation_result:
+            complete_details["bid_range"] = {
+                "low": valuation_result.bid_range_low,
+                "high": valuation_result.bid_range_high,
+            }
+            complete_details["market_value"] = {
+                "low": valuation_result.market_value_low,
+                "high": valuation_result.market_value_high,
+            }
 
         total_duration = int((time.time() - total_start) * 1000)
         add_log_entry(job_id, "complete", "success", "Processing completed successfully",
-                     duration_ms=total_duration,
-                     details={"total_cost": cost, "vehicle": vehicle_info, "summary": summary})
+                     duration_ms=total_duration, details=complete_details)
 
         update_job_status(job_id, JobStatus.COMPLETE.value, 100, "Complete")
 
@@ -295,11 +427,12 @@ def process_url_task(job_id: str):
         with PhaseTimer(job_id, "video_processing", "Video processing pipeline") as timer:
             result = video_service.process_video(video_path, video_progress)
             transcript_path = result.transcript_json_path
+            frames_dir = result.frames_dir
             timer.add_detail("transcript_path", transcript_path)
             timer.add_detail("captioned_video", result.captioned_video_path)
             timer.add_detail("duration_seconds", result.duration_seconds)
+            timer.add_detail("frames_dir", frames_dir)
 
-        # Log the transcript content
         transcript_text = ""
         try:
             with open(transcript_path, 'r') as f:
@@ -311,18 +444,18 @@ def process_url_task(job_id: str):
         except Exception as e:
             add_log_entry(job_id, "transcript", "warning", f"Could not read transcript: {str(e)}")
 
-        update_job_status(job_id, JobStatus.ANALYZING.value, 55, "Analyzing transcript")
+        update_job_status(job_id, JobStatus.ANALYZING.value, 40, "Analyzing transcript")
 
         with PhaseTimer(job_id, "ai_analysis", "AI transcript analysis") as timer:
             agent_service = AgentService()
 
             def agent_progress(step, progress):
                 if step == "processing_chunks":
-                    update_job_status(job_id, JobStatus.ANALYZING.value, 60, "Processing transcript chunks")
+                    update_job_status(job_id, JobStatus.ANALYZING.value, 45, "Processing transcript chunks")
                 elif step == "generating_summary":
-                    update_job_status(job_id, JobStatus.ANALYZING.value, 85, "Generating summary")
+                    update_job_status(job_id, JobStatus.ANALYZING.value, 52, "Generating summary")
                 elif step == "complete":
-                    update_job_status(job_id, JobStatus.ANALYZING.value, 95, "Analysis complete")
+                    update_job_status(job_id, JobStatus.ANALYZING.value, 58, "Transcript analysis complete")
 
             agent_service.process_transcript(transcript_path, agent_progress)
 
@@ -330,7 +463,7 @@ def process_url_task(job_id: str):
             summary = agent_service.get_summary(transcript_name)
             cost = agent_service.get_cost(transcript_name)
             vehicle_info = agent_service.extract_vehicle_info(transcript_name)
-            
+
             timer.add_detail("cost", cost)
             timer.add_detail("vehicle_info", vehicle_info)
             timer.add_detail("summary", summary)
@@ -341,13 +474,31 @@ def process_url_task(job_id: str):
             make=vehicle_info.get("make"),
             model=vehicle_info.get("model"),
             year=vehicle_info.get("year"),
-            cost=cost
+            cost=cost,
         )
+
+        condition_report_json, condition_score, valuation_result, cost = _run_vision_and_valuation(
+            job_id, frames_dir, vehicle_info, cost
+        )
+
+        complete_details = {
+            "total_cost": cost,
+            "vehicle": vehicle_info,
+            "condition_score": condition_score,
+        }
+        if valuation_result:
+            complete_details["bid_range"] = {
+                "low": valuation_result.bid_range_low,
+                "high": valuation_result.bid_range_high,
+            }
+            complete_details["market_value"] = {
+                "low": valuation_result.market_value_low,
+                "high": valuation_result.market_value_high,
+            }
 
         total_duration = int((time.time() - total_start) * 1000)
         add_log_entry(job_id, "complete", "success", "Processing completed successfully",
-                     duration_ms=total_duration,
-                     details={"total_cost": cost, "vehicle": vehicle_info, "summary": summary})
+                     duration_ms=total_duration, details=complete_details)
 
         update_job_status(job_id, JobStatus.COMPLETE.value, 100, "Complete")
 

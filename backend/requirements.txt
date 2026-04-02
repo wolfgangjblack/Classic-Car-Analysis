@@ -1,5 +1,5 @@
 # Core ML/AI
-openai==1.65.4
+openai>=1.75.0
 openai-whisper==20240930
 torch==2.6.0
 torchaudio==2.6.0

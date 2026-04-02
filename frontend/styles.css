@@ -331,6 +331,238 @@ header .subtitle {
     color: var(--text-secondary);
 }
 
+/* Condition Section */
+.condition-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.condition-section h3,
+.valuation-section h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+}
+
+.condition-header {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    margin-bottom: 1.25rem;
+}
+
+.condition-score-badge {
+    flex-shrink: 0;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+}
+
+.condition-score-badge .score-number {
+    font-size: 1.5rem;
+    line-height: 1;
+}
+
+.condition-score-badge .score-label {
+    font-size: 0.7rem;
+    opacity: 0.85;
+}
+
+.score-excellent { background: var(--success-color); }
+.score-good { background: #22c55e; }
+.score-fair { background: var(--warning-color); }
+.score-below-avg { background: #f97316; }
+.score-poor { background: var(--error-color); }
+
+.condition-assessment {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.condition-areas {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.area-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    background: var(--card-bg);
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
+
+.area-name {
+    color: var(--text-secondary);
+}
+
+.area-score {
+    font-weight: 600;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.area-score-5 { background: rgba(22, 163, 74, 0.15); color: var(--success-color); }
+.area-score-4 { background: rgba(34, 197, 94, 0.15); color: #16a34a; }
+.area-score-3 { background: rgba(202, 138, 4, 0.15); color: var(--warning-color); }
+.area-score-2 { background: rgba(249, 115, 22, 0.15); color: #ea580c; }
+.area-score-1 { background: rgba(220, 38, 38, 0.15); color: var(--error-color); }
+.area-score-0 { background: var(--bg-color); color: var(--text-secondary); }
+
+.observations-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 0.75rem;
+}
+
+.observations-good h4 {
+    color: var(--success-color);
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.observations-bad h4 {
+    color: var(--error-color);
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.observations-good ul,
+.observations-bad ul {
+    list-style: none;
+    padding: 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.observations-good li,
+.observations-bad li {
+    padding: 0.25rem 0;
+    padding-left: 1rem;
+    position: relative;
+}
+
+.observations-good li::before {
+    content: "+";
+    position: absolute;
+    left: 0;
+    color: var(--success-color);
+    font-weight: 700;
+}
+
+.observations-bad li::before {
+    content: "-";
+    position: absolute;
+    left: 0;
+    color: var(--error-color);
+    font-weight: 700;
+}
+
+/* Valuation Section */
+.valuation-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.valuation-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.valuation-card {
+    padding: 1rem;
+    background: var(--card-bg);
+    border-radius: 8px;
+    text-align: center;
+}
+
+.valuation-label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+}
+
+.valuation-range {
+    display: block;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.bid-card {
+    background: rgba(37, 99, 235, 0.05);
+    border: 1px solid rgba(37, 99, 235, 0.15);
+}
+
+.bid-range {
+    color: var(--primary-color);
+}
+
+.bid-bar-container {
+    margin: 1rem 0;
+}
+
+.bid-bar {
+    height: 12px;
+    background: var(--border-color);
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+}
+
+.bid-bar-market {
+    position: absolute;
+    height: 100%;
+    background: rgba(22, 163, 74, 0.25);
+    border-radius: 6px;
+}
+
+.bid-bar-bid {
+    position: absolute;
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 6px;
+    opacity: 0.7;
+}
+
+.bid-bar-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.25rem;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.valuation-notes {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-top: 0.75rem;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
 /* Footer */
 footer {
     text-align: center;

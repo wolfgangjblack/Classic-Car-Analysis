@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import create_engine, Column, String, Integer, Float, Text, DateTime, Enum as SQLEnum
+from sqlalchemy import create_engine, Column, String, Integer, Float, Text, DateTime, Enum as SQLEnum, text as sa_text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from enum import Enum
 
@@ -13,6 +13,8 @@ class JobStatus(str, Enum):
     PROCESSING_VIDEO = "processing_video"
     TRANSCRIBING = "transcribing"
     ANALYZING = "analyzing"
+    VISION_ANALYSIS = "vision_analysis"
+    VALUATION = "valuation"
     COMPLETE = "complete"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -44,6 +46,17 @@ class Job(Base):
     model = Column(String, nullable=True)
     year = Column(String, nullable=True)
 
+    # Vision condition assessment
+    condition_report = Column(Text, nullable=True)
+    condition_score = Column(Float, nullable=True)
+
+    # Market valuation
+    market_value_low = Column(Float, nullable=True)
+    market_value_high = Column(Float, nullable=True)
+    bid_range_low = Column(Float, nullable=True)
+    bid_range_high = Column(Float, nullable=True)
+    valuation_notes = Column(Text, nullable=True)
+
     # Cost tracking
     cost = Column(Float, default=0.0)
 
@@ -65,7 +78,36 @@ def create_session_factory(engine):
 
 
 def init_db(database_url: str):
-    """Initialize database and create tables"""
+    """Initialize database and create tables, migrating existing schema if needed."""
     engine = get_engine(database_url)
     Base.metadata.create_all(bind=engine)
+
+    _migrate_add_columns(engine)
     return engine
+
+
+def _migrate_add_columns(engine):
+    """Add new columns to existing tables that were created before schema updates."""
+    new_columns = {
+        "jobs": [
+            ("condition_report", "TEXT"),
+            ("condition_score", "REAL"),
+            ("market_value_low", "REAL"),
+            ("market_value_high", "REAL"),
+            ("bid_range_low", "REAL"),
+            ("bid_range_high", "REAL"),
+            ("valuation_notes", "TEXT"),
+        ]
+    }
+
+    with engine.connect() as conn:
+        for table, columns in new_columns.items():
+            existing = {
+                row[1] for row in conn.execute(sa_text(f"PRAGMA table_info({table})"))
+            }
+            for col_name, col_type in columns:
+                if col_name not in existing:
+                    conn.execute(
+                        sa_text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
+                    )
+            conn.commit()
