@@ -3,8 +3,8 @@ from typing import Optional
 from openai import OpenAI
 
 from ..config import get_settings
-from ..deps import get_openai_client
 from ..core.valuation import ValuationEngine, ValuationResult
+from ..deps import get_openai_client
 
 
 class ValuationService:
@@ -13,7 +13,7 @@ class ValuationService:
     def __init__(self, client: Optional[OpenAI] = None):
         self.settings = get_settings()
         self._client = client
-        self._engine = None
+        self._engine: Optional[ValuationEngine] = None
 
     @property
     def engine(self) -> ValuationEngine:

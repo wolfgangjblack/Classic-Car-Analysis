@@ -1,20 +1,18 @@
 """Tests for backend/app/workers/tasks.py -- _run_vision_and_valuation orchestration."""
 
 import json
-import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+from app.core.valuation import ValuationResult
+from app.core.vision_analyzer import ConditionResult
+from app.models.db import Base, Job, JobStatus, SourceType
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-
-from app.models.db import Base, Job, JobStatus, SourceType
-from app.core.vision_analyzer import ConditionResult
-from app.core.valuation import ValuationResult
 
 
 @pytest.fixture
@@ -100,18 +98,29 @@ def _mock_valuation_result():
     )
 
 
-def _run_with_patches(pipeline_db, job_id, frames_dir, vehicle_info, cost, condition, valuation=None, valuation_error=None, tmp_path=None):
+def _run_with_patches(
+    pipeline_db,
+    job_id,
+    frames_dir,
+    vehicle_info,
+    cost,
+    condition,
+    valuation=None,
+    valuation_error=None,
+    tmp_path=None,
+):
     """Helper that patches all external deps and runs _run_vision_and_valuation."""
     from app.workers.tasks import _run_vision_and_valuation
 
     mock_settings = MagicMock()
     mock_settings.evidence_dir = (tmp_path or Path("/tmp")) / "evidence"
 
-    with patch("app.workers.tasks.get_db_session", return_value=pipeline_db), \
-         patch("app.workers.tasks.VisionService") as mock_vs, \
-         patch("app.workers.tasks.ValuationService") as mock_vals, \
-         patch("app.workers.tasks.get_settings", return_value=mock_settings):
-
+    with (
+        patch("app.workers.tasks.get_db_session", return_value=pipeline_db),
+        patch("app.workers.tasks.VisionService") as mock_vs,
+        patch("app.workers.tasks.ValuationService") as mock_vals,
+        patch("app.workers.tasks.get_settings", return_value=mock_settings),
+    ):
         mock_vs.return_value.analyze_vehicle_condition.return_value = condition
         if valuation_error:
             mock_vals.return_value.evaluate.side_effect = valuation_error
@@ -129,8 +138,14 @@ def test_vision_and_valuation_happy_path(pipeline_db, pipeline_job, tmp_path):
     job_id = pipeline_job.id
 
     (cr_json, score, val_result, cost), _ = _run_with_patches(
-        pipeline_db, job_id, str(tmp_path / "frames"), vehicle_info, 0.002,
-        condition, valuation=valuation, tmp_path=tmp_path,
+        pipeline_db,
+        job_id,
+        str(tmp_path / "frames"),
+        vehicle_info,
+        0.002,
+        condition,
+        valuation=valuation,
+        tmp_path=tmp_path,
     )
 
     pipeline_db.expire_all()
@@ -150,8 +165,14 @@ def test_valuation_failure_non_fatal(pipeline_db, pipeline_job, tmp_path):
     job_id = pipeline_job.id
 
     (cr_json, score, val_result, cost), _ = _run_with_patches(
-        pipeline_db, job_id, str(tmp_path / "frames"), vehicle_info, 0.002,
-        condition, valuation_error=RuntimeError("API unavailable"), tmp_path=tmp_path,
+        pipeline_db,
+        job_id,
+        str(tmp_path / "frames"),
+        vehicle_info,
+        0.002,
+        condition,
+        valuation_error=RuntimeError("API unavailable"),
+        tmp_path=tmp_path,
     )
 
     pipeline_db.expire_all()
@@ -167,8 +188,13 @@ def test_valuation_skipped_no_make(pipeline_db, pipeline_job, tmp_path):
     job_id = pipeline_job.id
 
     (cr_json, score, val_result, cost), mock_vals = _run_with_patches(
-        pipeline_db, job_id, str(tmp_path / "frames"), vehicle_info, 0.002,
-        condition, tmp_path=tmp_path,
+        pipeline_db,
+        job_id,
+        str(tmp_path / "frames"),
+        vehicle_info,
+        0.002,
+        condition,
+        tmp_path=tmp_path,
     )
 
     mock_vals.return_value.evaluate.assert_not_called()
@@ -181,8 +207,14 @@ def test_evidence_frames_copied(pipeline_db, pipeline_job, tmp_path):
     job_id = pipeline_job.id
 
     _run_with_patches(
-        pipeline_db, job_id, str(tmp_path / "frames"), vehicle_info, 0.002,
-        condition, valuation=_mock_valuation_result(), tmp_path=tmp_path,
+        pipeline_db,
+        job_id,
+        str(tmp_path / "frames"),
+        vehicle_info,
+        0.002,
+        condition,
+        valuation=_mock_valuation_result(),
+        tmp_path=tmp_path,
     )
 
     evidence_dir = tmp_path / "evidence" / job_id
@@ -197,8 +229,14 @@ def test_vision_summary_appended(pipeline_db, pipeline_job, tmp_path):
     job_id = pipeline_job.id
 
     _run_with_patches(
-        pipeline_db, job_id, str(tmp_path / "frames"), vehicle_info, 0.002,
-        condition, valuation=_mock_valuation_result(), tmp_path=tmp_path,
+        pipeline_db,
+        job_id,
+        str(tmp_path / "frames"),
+        vehicle_info,
+        0.002,
+        condition,
+        valuation=_mock_valuation_result(),
+        tmp_path=tmp_path,
     )
 
     pipeline_db.expire_all()

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .exceptions import CarAnalysisError
-from .models.db import get_engine, create_session_factory
+from .models.db import create_session_factory, get_engine
 
 
 @lru_cache()
@@ -43,4 +43,5 @@ def get_db():
 def get_db_session() -> Session:
     """Get a database session for non-FastAPI contexts (background tasks, CLI)."""
     SessionLocal = _get_session_factory()
-    return SessionLocal()
+    session: Session = SessionLocal()
+    return session

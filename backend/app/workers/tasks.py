@@ -5,28 +5,35 @@ import shutil
 import time
 import traceback
 from datetime import datetime, timezone
-from pathlib import Path
+from typing import Any, Optional
 
 from ..config import get_settings
 from ..deps import get_db_session
 from ..models.db import Job, JobStatus
-from ..services.downloader import VideoDownloader
-from ..services.video_service import VideoService
 from ..services.agent_service import AgentService
-from ..services.vision_service import VisionService
+from ..services.downloader import VideoDownloader
 from ..services.valuation_service import ValuationService
+from ..services.video_service import VideoService
+from ..services.vision_service import VisionService
 
 logger = logging.getLogger(__name__)
 
 
-def add_log_entry(job_id: str, phase: str, status: str, message: str, duration_ms: int = None, details: dict = None):
+def add_log_entry(
+    job_id: str,
+    phase: str,
+    status: str,
+    message: str,
+    duration_ms: Optional[int] = None,
+    details: Optional[dict[str, Any]] = None,
+):
     """Add a log entry for a job"""
     db = get_db_session()
     try:
         job = db.query(Job).filter(Job.id == job_id).first()
         if job:
             logs = json.loads(job.logs) if job.logs else []
-            entry = {
+            entry: dict[str, Any] = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "phase": phase,
                 "status": status,
@@ -43,7 +50,13 @@ def add_log_entry(job_id: str, phase: str, status: str, message: str, duration_m
         db.close()
 
 
-def update_job_status(job_id: str, status: str, progress: int = None, current_step: str = None, error: str = None):
+def update_job_status(
+    job_id: str,
+    status: str,
+    progress: Optional[int] = None,
+    current_step: Optional[str] = None,
+    error: Optional[str] = None,
+):
     """Update job status in database"""
     db = get_db_session()
     try:
@@ -67,18 +80,18 @@ def update_job_status(job_id: str, status: str, progress: int = None, current_st
 
 def update_job_results(
     job_id: str,
-    summary: str = None,
-    make: str = None,
-    model: str = None,
-    year: str = None,
-    cost: float = None,
-    condition_report: str = None,
-    condition_score: float = None,
-    market_value_low: float = None,
-    market_value_high: float = None,
-    bid_range_low: float = None,
-    bid_range_high: float = None,
-    valuation_notes: str = None,
+    summary: Optional[str] = None,
+    make: Optional[str] = None,
+    model: Optional[str] = None,
+    year: Optional[str] = None,
+    cost: Optional[float] = None,
+    condition_report: Optional[str] = None,
+    condition_score: Optional[float] = None,
+    market_value_low: Optional[float] = None,
+    market_value_high: Optional[float] = None,
+    bid_range_low: Optional[float] = None,
+    bid_range_high: Optional[float] = None,
+    valuation_notes: Optional[str] = None,
 ):
     """Update job with results. Only updates fields that are not None."""
     db = get_db_session()
@@ -116,12 +129,13 @@ def update_job_results(
 
 class PhaseTimer:
     """Context manager for timing phases and logging"""
+
     def __init__(self, job_id: str, phase: str, message: str):
         self.job_id = job_id
         self.phase = phase
         self.message = message
-        self.start_time = None
-        self.details = {}
+        self.start_time: Optional[float] = None
+        self.details: dict[str, Any] = {}
 
     def __enter__(self):
         self.start_time = time.time()
@@ -132,24 +146,28 @@ class PhaseTimer:
         duration_ms = int((time.time() - self.start_time) * 1000)
         if exc_type is None:
             add_log_entry(
-                self.job_id, self.phase, "completed",
+                self.job_id,
+                self.phase,
+                "completed",
                 f"Completed: {self.message}",
                 duration_ms=duration_ms,
-                details=self.details if self.details else None
+                details=self.details if self.details else None,
             )
         else:
             error_details = {
                 "error_type": exc_type.__name__,
                 "error_message": str(exc_val),
-                "traceback": traceback.format_exc()
+                "traceback": traceback.format_exc(),
             }
             if self.details:
                 error_details.update(self.details)
             add_log_entry(
-                self.job_id, self.phase, "failed",
+                self.job_id,
+                self.phase,
+                "failed",
                 f"Failed: {self.message} - {str(exc_val)}",
                 duration_ms=duration_ms,
-                details=error_details
+                details=error_details,
             )
         return False
 
@@ -278,16 +296,15 @@ def _run_vision_and_valuation(job_id, frames_dir, vehicle_info, current_cost):
             )
         except Exception as e:
             add_log_entry(
-                job_id, "valuation", "failed",
+                job_id,
+                "valuation",
+                "failed",
                 f"Market valuation failed (non-fatal): {str(e)}",
                 details={"error_type": type(e).__name__, "traceback": traceback.format_exc()},
             )
             logger.warning("Valuation failed (non-fatal): %s", e)
     else:
-        add_log_entry(
-            job_id, "valuation", "warning",
-            "Skipping valuation: make/model not identified from transcript"
-        )
+        add_log_entry(job_id, "valuation", "warning", "Skipping valuation: make/model not identified from transcript")
 
     return condition_report_json, condition_score, valuation_result, cost
 
@@ -329,12 +346,22 @@ def _run_pipeline(job_id: str, video_path: str, progress_base: int = 5, progress
             timer.add_detail("frames_dir", frames_dir)
 
         try:
-            with open(transcript_path, 'r') as f:
+            with open(transcript_path, "r") as f:
                 transcript_data = json.load(f)
-                transcript_text = transcript_data.get('text', '') if isinstance(transcript_data, dict) else str(transcript_data)
-                add_log_entry(job_id, "transcript", "info", "Transcript generated",
-                             details={"transcript_text": transcript_text[:8000] if len(transcript_text) > 8000 else transcript_text,
-                                     "total_length": len(transcript_text)})
+                transcript_text = (
+                    transcript_data.get("text", "") if isinstance(transcript_data, dict) else str(transcript_data)
+                )
+                truncated = transcript_text[:8000] if len(transcript_text) > 8000 else transcript_text
+                add_log_entry(
+                    job_id,
+                    "transcript",
+                    "info",
+                    "Transcript generated",
+                    details={
+                        "transcript_text": truncated,
+                        "total_length": len(transcript_text),
+                    },
+                )
         except Exception as e:
             add_log_entry(job_id, "transcript", "warning", f"Could not read transcript: {str(e)}")
 
@@ -391,16 +418,27 @@ def _run_pipeline(job_id: str, video_path: str, progress_base: int = 5, progress
             }
 
         total_duration = int((time.time() - total_start) * 1000)
-        add_log_entry(job_id, "complete", "success", "Processing completed successfully",
-                     duration_ms=total_duration, details=complete_details)
+        add_log_entry(
+            job_id,
+            "complete",
+            "success",
+            "Processing completed successfully",
+            duration_ms=total_duration,
+            details=complete_details,
+        )
 
         update_job_status(job_id, JobStatus.COMPLETE.value, 100, "Complete")
 
     except Exception as e:
         total_duration = int((time.time() - total_start) * 1000)
-        add_log_entry(job_id, "error", "failed", f"Processing failed: {str(e)}",
-                     duration_ms=total_duration,
-                     details={"error_type": type(e).__name__, "traceback": traceback.format_exc()})
+        add_log_entry(
+            job_id,
+            "error",
+            "failed",
+            f"Processing failed: {str(e)}",
+            duration_ms=total_duration,
+            details={"error_type": type(e).__name__, "traceback": traceback.format_exc()},
+        )
         update_job_status(job_id, JobStatus.FAILED.value, error=str(e))
         raise
 
@@ -413,8 +451,9 @@ def process_video_task(job_id: str):
         if not job:
             return
         video_path = job.source_path
-        add_log_entry(job_id, "init", "info", "Starting processing for uploaded video",
-                     details={"video_path": video_path})
+        add_log_entry(
+            job_id, "init", "info", "Starting processing for uploaded video", details={"video_path": video_path}
+        )
     finally:
         db.close()
 
@@ -431,8 +470,7 @@ def process_url_task(job_id: str):
         if not job:
             return
         url = job.source_path
-        add_log_entry(job_id, "init", "info", "Starting processing for URL",
-                     details={"url": url})
+        add_log_entry(job_id, "init", "info", "Starting processing for URL", details={"url": url})
     finally:
         db.close()
 

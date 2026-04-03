@@ -1,17 +1,16 @@
 import json
 import shutil
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..deps import get_db
 from ..models.db import Job, JobStatus, SourceType
-from ..models.schemas import JobResponse, JobDetailResponse, JobListResponse, JobLogsResponse, LogEntry
-
+from ..models.schemas import JobDetailResponse, JobListResponse, JobLogsResponse, JobResponse, LogEntry
 
 router = APIRouter()
 
@@ -21,7 +20,7 @@ async def list_jobs(
     status: Optional[str] = Query(None, description="Filter by status"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """List all jobs with optional filtering"""
     query = db.query(Job)
@@ -44,15 +43,15 @@ async def list_jobs(
                 created_at=j.created_at,
                 started_at=j.started_at,
                 completed_at=j.completed_at,
-                error=j.error
+                error=j.error,
             )
             for j in jobs
         ],
-        total=total
+        total=total,
     )
 
 
-def parse_logs(logs_json: str) -> list:
+def parse_logs(logs_json: Optional[str]) -> list:
     """Parse logs JSON string into list of LogEntry"""
     if not logs_json:
         return []
@@ -94,7 +93,7 @@ async def get_job(job_id: str, db: Session = Depends(get_db)):
         bid_range_high=job.bid_range_high,
         valuation_notes=job.valuation_notes,
         cost=job.cost or 0.0,
-        logs=parse_logs(job.logs)
+        logs=parse_logs(job.logs),
     )
 
 
@@ -106,10 +105,7 @@ async def get_job_logs(job_id: str, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    return JobLogsResponse(
-        job_id=job.id,
-        logs=parse_logs(job.logs)
-    )
+    return JobLogsResponse(job_id=job.id, logs=parse_logs(job.logs))
 
 
 @router.get("/{job_id}/summary")
@@ -121,10 +117,7 @@ async def get_job_summary(job_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Job not found")
 
     if job.status != JobStatus.COMPLETE.value:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Job is not complete. Current status: {job.status}"
-        )
+        raise HTTPException(status_code=400, detail=f"Job is not complete. Current status: {job.status}")
 
     return {
         "id": job.id,
@@ -208,9 +201,11 @@ async def retry_job(
 
     if job.source_type == SourceType.URL.value:
         from ..workers.tasks import process_url_task
+
         background_tasks.add_task(process_url_task, job_id)
     else:
         from ..workers.tasks import process_video_task
+
         background_tasks.add_task(process_video_task, job_id)
 
     return JobResponse(

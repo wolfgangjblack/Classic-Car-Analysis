@@ -12,7 +12,7 @@ def chunk_transcript_by_time(transcript, chunk_size=60):
     Returns:
         list: List of text chunks
     """
-    ends = [segment['end'] for segment in transcript['segments']]
+    ends = [segment["end"] for segment in transcript["segments"]]
 
     if not ends:
         return []
@@ -25,16 +25,18 @@ def chunk_transcript_by_time(transcript, chunk_size=60):
     current_chunk = ""
     current_chunk_idx = 0
 
-    for i, segment in enumerate(transcript['segments']):
-        current_chunk += segment['text'] + ' '
+    for i, segment in enumerate(transcript["segments"]):
+        current_chunk += segment["text"] + " "
 
-        is_last_segment = i == len(transcript['segments']) - 1
+        is_last_segment = i == len(transcript["segments"]) - 1
         reached_chunk_boundary = (
-            current_chunk_idx < len(chunk_times) and
-            segment['end'] <= chunk_times[current_chunk_idx] and
-            (is_last_segment or
-             i + 1 < len(transcript['segments']) and
-             transcript['segments'][i + 1]['end'] > chunk_times[current_chunk_idx])
+            current_chunk_idx < len(chunk_times)
+            and segment["end"] <= chunk_times[current_chunk_idx]
+            and (
+                is_last_segment
+                or i + 1 < len(transcript["segments"])
+                and transcript["segments"][i + 1]["end"] > chunk_times[current_chunk_idx]
+            )
         )
 
         if reached_chunk_boundary or is_last_segment:

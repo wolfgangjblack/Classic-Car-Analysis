@@ -1,12 +1,11 @@
-import os
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
-from .config import get_settings, configure_logging
+from .api import jobs, videos
+from .config import configure_logging, get_settings
 from .models.db import init_db
-from .api import videos, jobs
 
 
 @asynccontextmanager
@@ -53,7 +52,7 @@ async def health_check():
 @app.get("/api/costs")
 async def get_costs():
     """Get aggregate cost report"""
-    from .models.db import get_engine, create_session_factory, Job
+    from .models.db import Job, create_session_factory, get_engine
 
     settings = get_settings()
     engine = get_engine(settings.database_url)
@@ -69,12 +68,7 @@ async def get_costs():
             "completed_jobs": len(completed_jobs),
             "total_cost": total_cost,
             "jobs": [
-                {
-                    "id": j.id,
-                    "filename": j.original_filename,
-                    "cost": j.cost or 0,
-                    "status": j.status
-                }
+                {"id": j.id, "filename": j.original_filename, "cost": j.cost or 0, "status": j.status}
                 for j in jobs_list
-            ]
+            ],
         }

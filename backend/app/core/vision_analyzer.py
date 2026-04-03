@@ -3,12 +3,11 @@ import glob
 import json
 import logging
 import os
-from typing import Dict, List, Optional
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
-from ..exceptions import VisionAnalysisError
 from .retry import openai_retry
 
 logger = logging.getLogger(__name__)
@@ -75,12 +74,13 @@ class VisionAnalyzer:
         self.max_frames = max_frames
         self.prompt_path = prompt_path
         self._client = client
-        self._prompt_template = None
+        self._prompt_template: Optional[str] = None
 
     @property
     def client(self) -> OpenAI:
         if self._client is None:
             from ..deps import get_openai_client
+
             self._client = get_openai_client()
         return self._client
 
@@ -130,11 +130,13 @@ class VisionAnalyzer:
         with open(frame_path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
 
-    def build_messages(
-        self, frames: List[str], vehicle_info: Dict[str, str]
-    ) -> List[dict]:
+    def build_messages(self, frames: List[str], vehicle_info: Dict[str, str]) -> List[Dict[str, Any]]:
         """Build the multi-image chat message for GPT-4o."""
-        vehicle_str = f"{vehicle_info.get('year', 'Unknown')} {vehicle_info.get('make', 'Unknown')} {vehicle_info.get('model', 'Unknown')}"
+        vehicle_str = (
+            f"{vehicle_info.get('year', 'Unknown')} "
+            f"{vehicle_info.get('make', 'Unknown')} "
+            f"{vehicle_info.get('model', 'Unknown')}"
+        )
         system_prompt = self.prompt_template.replace("{vehicle_info}", vehicle_str)
 
         content_parts = [
@@ -149,16 +151,14 @@ class VisionAnalyzer:
         ]
 
         for i, frame_path in enumerate(frames):
-            content_parts.append(
-                {"type": "text", "text": f"--- Image {i + 1} ---"}
-            )
+            content_parts.append({"type": "text", "text": f"--- Image {i + 1} ---"})
             b64 = self.encode_frame(frame_path)
             ext = os.path.splitext(frame_path)[1].lower()
             mime = "image/png" if ext == ".png" else "image/jpeg"
             content_parts.append(
                 {
                     "type": "image_url",
-                    "image_url": {
+                    "image_url": {  # type: ignore[dict-item]
                         "url": f"data:{mime};base64,{b64}",
                         "detail": "high",
                     },
@@ -170,7 +170,7 @@ class VisionAnalyzer:
             {"role": "user", "content": content_parts},
         ]
 
-    def _parse_response(self, raw_text: str) -> dict:
+    def _parse_response(self, raw_text: str) -> Dict[str, Any]:
         """Extract JSON from the model response, handling markdown fences."""
         text = raw_text.strip()
         if text.startswith("```"):
@@ -179,7 +179,8 @@ class VisionAnalyzer:
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]
             text = "\n".join(lines)
-        return json.loads(text)
+        result: Dict[str, Any] = json.loads(text)
+        return result
 
     def _compute_overall_score(self, area_scores: Dict[str, Dict]) -> float:
         """Weighted average of visible area scores."""
@@ -195,9 +196,7 @@ class VisionAnalyzer:
             return 0.0
         return round(weighted_sum / total_weight, 2)
 
-    def _resolve_evidence_frames(
-        self, observations: Dict[str, List], frame_paths: List[str]
-    ) -> Dict[str, List]:
+    def _resolve_evidence_frames(self, observations: Dict[str, List], frame_paths: List[str]) -> Dict[str, List]:
         """Add evidence_frame filename to each observation that has a valid image_index."""
         resolved = {}
         for category in ("good", "bad"):
@@ -217,9 +216,7 @@ class VisionAnalyzer:
         return resolved
 
     @openai_retry
-    def analyze_frames(
-        self, frames_dir: str, vehicle_info: Dict[str, str]
-    ) -> ConditionResult:
+    def analyze_frames(self, frames_dir: str, vehicle_info: Dict[str, str]) -> ConditionResult:
         """Run the full vision analysis pipeline."""
         frames = self.select_frames(frames_dir)
         logger.info("Selected %d frames for vision analysis", len(frames))
@@ -227,7 +224,7 @@ class VisionAnalyzer:
         messages = self.build_messages(frames, vehicle_info)
 
         logger.info("Sending %d images to %s for condition analysis", len(frames), self.model)
-        completion = self.client.chat.completions.create(
+        completion = self.client.chat.completions.create(  # type: ignore[call-overload]
             model=self.model,
             messages=messages,
             max_tokens=2000,
@@ -235,10 +232,12 @@ class VisionAnalyzer:
             response_format={"type": "json_object"},
         )
 
-        raw = completion.choices[0].message.content
+        raw = completion.choices[0].message.content or ""
+        usage = completion.usage
         cost = (
-            completion.usage.prompt_tokens * self.INPUT_COST_PER_TOKEN
-            + completion.usage.completion_tokens * self.OUTPUT_COST_PER_TOKEN
+            (usage.prompt_tokens * self.INPUT_COST_PER_TOKEN + usage.completion_tokens * self.OUTPUT_COST_PER_TOKEN)
+            if usage
+            else 0.0
         )
 
         logger.info("Vision analysis complete. Cost: $%.4f", cost)
@@ -250,9 +249,7 @@ class VisionAnalyzer:
         if parsed.get("overall_score", 0) > 0:
             overall = parsed["overall_score"]
 
-        observations = self._resolve_evidence_frames(
-            parsed.get("observations", {"good": [], "bad": []}), frames
-        )
+        observations = self._resolve_evidence_frames(parsed.get("observations", {"good": [], "bad": []}), frames)
 
         return ConditionResult(
             observations=observations,

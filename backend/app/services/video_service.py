@@ -1,11 +1,11 @@
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 from openai import OpenAI
 
 from ..config import get_settings
-from ..deps import get_openai_client
 from ..core.video_pipeline import VideoProcessingPipeline
+from ..deps import get_openai_client
 
 
 class VideoService:
@@ -14,7 +14,7 @@ class VideoService:
     def __init__(self, client: Optional[OpenAI] = None):
         self.settings = get_settings()
         self._client = client
-        self._pipeline = None
+        self._pipeline: Optional[VideoProcessingPipeline] = None
 
     @property
     def pipeline(self) -> VideoProcessingPipeline:
@@ -29,11 +29,7 @@ class VideoService:
             )
         return self._pipeline
 
-    def process_video(
-        self,
-        video_path: str,
-        progress_callback: Optional[Callable] = None
-    ):
+    def process_video(self, video_path: str, progress_callback: Optional[Callable] = None):
         """
         Process a video file.
 
@@ -48,7 +44,7 @@ class VideoService:
 
     def get_transcript_path(self, video_path: str) -> str:
         """Get the expected transcript path for a video"""
-        filename = Path(video_path).stem.replace(' ', '_').replace('-', '_')
+        filename = Path(video_path).stem.replace(" ", "_").replace("-", "_")
         return str(self.settings.transcripts_dir / f"{filename}.json")
 
 

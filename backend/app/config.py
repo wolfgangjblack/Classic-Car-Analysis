@@ -1,10 +1,9 @@
 import logging
-import os
-from pathlib import Path
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic_settings import BaseSettings
 from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -14,17 +13,11 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
 
     # Database
-    database_url: str = Field(
-        default="sqlite:///./data/jobs.db",
-        alias="DATABASE_URL"
-    )
+    database_url: str = Field(default="sqlite:///./data/jobs.db", alias="DATABASE_URL")
 
     # Paths
     data_dir: Path = Field(default=Path("./data"), alias="DATA_DIR")
-    agent_prompts_dir: Path = Field(
-        default=Path("./agent_prompts"),
-        alias="AGENT_PROMPTS_DIR"
-    )
+    agent_prompts_dir: Path = Field(default=Path("./agent_prompts"), alias="AGENT_PROMPTS_DIR")
 
     # Video Processing
     whisper_model_size: str = Field(default="medium", alias="WHISPER_MODEL_SIZE")

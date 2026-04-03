@@ -1,7 +1,6 @@
 """Tests for backend/app/core/valuation.py -- pure logic methods."""
 
 import pytest
-
 from app.core.valuation import ValuationEngine
 
 
@@ -11,6 +10,7 @@ def engine():
 
 
 # --- _get_condition_multiplier ---
+
 
 def test_condition_multiplier_score_5(engine):
     assert engine._get_condition_multiplier(5.0) == (0.95, 1.05)
@@ -37,18 +37,17 @@ def test_condition_multiplier_clamp_low(engine):
 
 # --- calculate_bid_range ---
 
+
 def test_calculate_bid_range_excellent(engine):
     bid_low, bid_high = engine.calculate_bid_range(40000, 60000, 5.0)
-    midpoint = 50000
-    # Score 5: 0.95 * 50000 = 47500, 1.05 * 50000 = 52500
+    # midpoint=50000, Score 5: 0.95 * 50000 = 47500, 1.05 * 50000 = 52500
     assert bid_low == 47500
     assert bid_high == 52500
 
 
 def test_calculate_bid_range_poor(engine):
     bid_low, bid_high = engine.calculate_bid_range(40000, 60000, 1.0)
-    midpoint = 50000
-    # Score 1: 0.25 * 50000 = 12500, 0.45 * 50000 = 22500
+    # midpoint=50000, Score 1: 0.25 * 50000 = 12500, 0.45 * 50000 = 22500
     assert bid_low == 12500
     assert bid_high == 22500
 
@@ -60,8 +59,12 @@ def test_calculate_bid_range_zero_market(engine):
 
 # --- _parse_valuation_response ---
 
+
 def test_parse_valuation_json_response(engine):
-    text = 'Here is the data: {"market_value_low": 25000, "market_value_high": 45000, "notes": "Based on recent sales", "recent_sales": []}'
+    text = (
+        'Here is the data: {"market_value_low": 25000, "market_value_high": 45000, '
+        '"notes": "Based on recent sales", "recent_sales": []}'
+    )
     result = engine._parse_valuation_response(text)
     assert result["market_value_low"] == 25000
     assert result["market_value_high"] == 45000

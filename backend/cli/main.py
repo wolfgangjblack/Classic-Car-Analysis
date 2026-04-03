@@ -5,26 +5,20 @@ Classic Car Analysis CLI
 Command-line interface for processing classic car videos and generating summaries.
 """
 
-import os
 from pathlib import Path
 from typing import Optional
 
 import typer
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
-from rich.table import Table
-from rich.panel import Panel
-
 from app.config import get_settings
-from app.services.video_service import VideoService
 from app.services.agent_service import AgentService
 from app.services.downloader import VideoDownloader
+from app.services.video_service import VideoService
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+from rich.table import Table
 
-app = typer.Typer(
-    name="car-analysis",
-    help="AI-powered classic car video analysis tool",
-    add_completion=False
-)
+app = typer.Typer(name="car-analysis", help="AI-powered classic car video analysis tool", add_completion=False)
 
 console = Console()
 
@@ -32,22 +26,15 @@ console = Console()
 @app.command()
 def process(
     video_path: Path = typer.Argument(..., help="Path to video file"),
-    output_dir: Optional[Path] = typer.Option(
-        None, "--output", "-o",
-        help="Output directory for processed files"
-    ),
+    output_dir: Optional[Path] = typer.Option(None, "--output", "-o", help="Output directory for processed files"),
     model_size: str = typer.Option(
-        "medium", "--model", "-m",
-        help="Whisper model size (tiny, base, small, medium, large)"
+        "medium", "--model", "-m", help="Whisper model size (tiny, base, small, medium, large)"
     ),
-    skip_summary: bool = typer.Option(
-        False, "--skip-summary",
-        help="Skip the AI summary generation step"
-    )
+    skip_summary: bool = typer.Option(False, "--skip-summary", help="Skip the AI summary generation step"),
 ):
     """
     Process a video file and generate analysis summary.
-    
+
     This command extracts audio, transcribes it, and generates an AI summary
     of the classic car details mentioned in the video.
     """
@@ -56,10 +43,10 @@ def process(
         raise typer.Exit(1)
 
     settings = get_settings()
-    
+
     if output_dir:
         settings.data_dir = output_dir
-    
+
     settings.whisper_model_size = model_size
     settings.ensure_directories()
 
@@ -72,7 +59,7 @@ def process(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
-        console=console
+        console=console,
     ) as progress:
         task = progress.add_task("Processing video...", total=100)
 
@@ -84,7 +71,7 @@ def process(
                 "creating_subtitles": "Creating subtitles",
                 "adding_subtitles": "Adding subtitles",
                 "extracting_frames": "Extracting frames",
-                "complete": "Video processing complete"
+                "complete": "Video processing complete",
             }
             progress.update(task, completed=pct, description=step_names.get(step, step))
 
@@ -99,9 +86,7 @@ def process(
         agent_service = AgentService()
 
         with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console
         ) as progress:
             task = progress.add_task("Analyzing transcript...", total=None)
 
@@ -131,14 +116,11 @@ def process(
 @app.command()
 def summarize(
     transcript_path: Path = typer.Argument(..., help="Path to transcript JSON file"),
-    output_dir: Optional[Path] = typer.Option(
-        None, "--output", "-o",
-        help="Output directory for summary file"
-    )
+    output_dir: Optional[Path] = typer.Option(None, "--output", "-o", help="Output directory for summary file"),
 ):
     """
     Generate summary from an existing transcript file.
-    
+
     Use this if you already have a transcript JSON and just want to run
     the AI analysis.
     """
@@ -154,12 +136,8 @@ def summarize(
 
     console.print(Panel(f"Analyzing: [bold]{transcript_path.name}[/bold]"))
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
-        task = progress.add_task("Processing transcript...", total=None)
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console) as progress:
+        progress.add_task("Processing transcript...", total=None)
         agent_service.process_transcript(str(transcript_path))
 
     transcript_name = transcript_path.name
@@ -186,18 +164,12 @@ def summarize(
 @app.command()
 def download(
     url: str = typer.Argument(..., help="YouTube or video URL"),
-    output_dir: Optional[Path] = typer.Option(
-        None, "--output", "-o",
-        help="Output directory for downloaded video"
-    ),
-    process_video: bool = typer.Option(
-        True, "--process/--no-process",
-        help="Process the video after downloading"
-    )
+    output_dir: Optional[Path] = typer.Option(None, "--output", "-o", help="Output directory for downloaded video"),
+    process_video: bool = typer.Option(True, "--process/--no-process", help="Process the video after downloading"),
 ):
     """
     Download a video from URL and optionally process it.
-    
+
     Supports YouTube and many other video platforms via yt-dlp.
     """
     settings = get_settings()
@@ -210,6 +182,7 @@ def download(
     console.print(Panel(f"Downloading: [bold]{url}[/bold]"))
 
     import uuid
+
     job_id = str(uuid.uuid4())[:8]
 
     with Progress(
@@ -217,7 +190,7 @@ def download(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
-        console=console
+        console=console,
     ) as progress:
         task = progress.add_task("Downloading...", total=100)
 
@@ -234,16 +207,11 @@ def download(
 
     if process_video:
         console.print("\n[bold]Processing video...[/bold]")
-        ctx = typer.Context(app)
         process(Path(video_path))
 
 
 @app.command()
-def list_transcripts(
-    directory: Optional[Path] = typer.Argument(
-        None, help="Directory containing transcripts"
-    )
-):
+def list_transcripts(directory: Optional[Path] = typer.Argument(None, help="Directory containing transcripts")):
     """
     List available transcript files.
     """
@@ -269,6 +237,7 @@ def list_transcripts(
         stat = t.stat()
         size = f"{stat.st_size / 1024:.1f} KB"
         from datetime import datetime
+
         modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
         table.add_row(t.name, size, modified)
 

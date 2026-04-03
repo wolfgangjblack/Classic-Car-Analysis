@@ -1,11 +1,15 @@
 import uuid
 from datetime import datetime, timezone
-
-from sqlalchemy import create_engine, inspect, Column, String, Integer, Float, Text, DateTime, text as sa_text
-from sqlalchemy.orm import declarative_base, sessionmaker
 from enum import Enum
+from typing import Optional
 
-Base = declarative_base()
+from sqlalchemy import DateTime, Float, Integer, String, Text, create_engine, inspect
+from sqlalchemy import text as sa_text
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 class JobStatus(str, Enum):
@@ -29,43 +33,43 @@ class SourceType(str, Enum):
 class Job(Base):
     __tablename__ = "jobs"
 
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    source_type = Column(String, nullable=False)
-    source_path = Column(String, nullable=False)
-    original_filename = Column(String, nullable=True)
-    status = Column(String, default=JobStatus.PENDING.value)
-    progress = Column(Integer, default=0)
-    current_step = Column(String, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    source_type: Mapped[str] = mapped_column(String, nullable=False)
+    source_path: Mapped[str] = mapped_column(String, nullable=False)
+    original_filename: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default=JobStatus.PENDING.value)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    current_step: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Results
-    transcript_path = Column(String, nullable=True)
-    summary = Column(Text, nullable=True)
-    make = Column(String, nullable=True)
-    model = Column(String, nullable=True)
-    year = Column(String, nullable=True)
+    transcript_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    make: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    year: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # Vision condition assessment
-    condition_report = Column(Text, nullable=True)
-    condition_score = Column(Float, nullable=True)
+    condition_report: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    condition_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Market valuation
-    market_value_low = Column(Float, nullable=True)
-    market_value_high = Column(Float, nullable=True)
-    bid_range_low = Column(Float, nullable=True)
-    bid_range_high = Column(Float, nullable=True)
-    valuation_notes = Column(Text, nullable=True)
+    market_value_low: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    market_value_high: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    bid_range_low: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    bid_range_high: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    valuation_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Cost tracking
-    cost = Column(Float, default=0.0)
+    cost: Mapped[float] = mapped_column(Float, default=0.0)
 
     # Error info
-    error = Column(Text, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Processing logs (JSON array of log entries)
-    logs = Column(Text, nullable=True)
+    logs: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 def get_engine(database_url: str):
@@ -107,7 +111,5 @@ def _migrate_add_columns(engine):
             existing = {col["name"] for col in inspector.get_columns(table)}
             for col_name, col_type in columns:
                 if col_name not in existing:
-                    conn.execute(
-                        sa_text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
-                    )
+                    conn.execute(sa_text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
             conn.commit()

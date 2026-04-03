@@ -1,12 +1,11 @@
 import json
 import logging
 import re
-from typing import Optional, Tuple
 from dataclasses import dataclass
+from typing import Any, Dict, Optional, Tuple
 
 from openai import OpenAI
 
-from ..exceptions import ValuationError
 from .retry import openai_retry
 
 logger = logging.getLogger(__name__)
@@ -46,6 +45,7 @@ class ValuationEngine:
     def client(self) -> OpenAI:
         if self._client is None:
             from ..deps import get_openai_client
+
             self._client = get_openai_client()
         return self._client
 
@@ -122,9 +122,11 @@ class ValuationEngine:
                                         }
                                     )
 
+        usage = response.usage
         token_cost = (
-            response.usage.input_tokens * self.INPUT_COST_PER_TOKEN
-            + response.usage.output_tokens * self.OUTPUT_COST_PER_TOKEN
+            (usage.input_tokens * self.INPUT_COST_PER_TOKEN + usage.output_tokens * self.OUTPUT_COST_PER_TOKEN)
+            if usage
+            else 0.0
         )
         cost = token_cost + (search_calls * self.SEARCH_COST_PER_CALL)
 
@@ -140,12 +142,13 @@ class ValuationEngine:
             cost,
         )
 
-    def _parse_valuation_response(self, text: str) -> dict:
+    def _parse_valuation_response(self, text: str) -> Dict[str, Any]:
         """Extract market value data from the response."""
         try:
             json_match = re.search(r"\{[^{}]*\"market_value_low\"[^{}]*\}", text, re.DOTALL)
             if json_match:
-                return json.loads(json_match.group())
+                result: Dict[str, Any] = json.loads(json_match.group())
+                return result
         except (json.JSONDecodeError, AttributeError):
             pass
 
@@ -217,9 +220,7 @@ class ValuationEngine:
         """
         Full valuation pipeline: web search + bid calculation.
         """
-        mv_low, mv_high, notes, sources, cost = self.lookup_market_value(
-            make, model, year, condition_summary
-        )
+        mv_low, mv_high, notes, sources, cost = self.lookup_market_value(make, model, year, condition_summary)
 
         bid_low, bid_high = self.calculate_bid_range(mv_low, mv_high, condition_score)
 
