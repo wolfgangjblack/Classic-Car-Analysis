@@ -115,6 +115,7 @@ def update_job_results(
 
 class PhaseTimer:
     """Context manager for timing phases and logging"""
+
     def __init__(self, job_id: str, phase: str, message: str):
         self.job_id = job_id
         self.phase = phase
@@ -131,24 +132,28 @@ class PhaseTimer:
         duration_ms = int((time.time() - self.start_time) * 1000)
         if exc_type is None:
             add_log_entry(
-                self.job_id, self.phase, "completed",
+                self.job_id,
+                self.phase,
+                "completed",
                 f"Completed: {self.message}",
                 duration_ms=duration_ms,
-                details=self.details if self.details else None
+                details=self.details if self.details else None,
             )
         else:
             error_details = {
                 "error_type": exc_type.__name__,
                 "error_message": str(exc_val),
-                "traceback": traceback.format_exc()
+                "traceback": traceback.format_exc(),
             }
             if self.details:
                 error_details.update(self.details)
             add_log_entry(
-                self.job_id, self.phase, "failed",
+                self.job_id,
+                self.phase,
+                "failed",
                 f"Failed: {self.message} - {str(exc_val)}",
                 duration_ms=duration_ms,
-                details=error_details
+                details=error_details,
             )
         return False
 
@@ -277,16 +282,15 @@ def _run_vision_and_valuation(job_id, frames_dir, vehicle_info, current_cost):
             )
         except Exception as e:
             add_log_entry(
-                job_id, "valuation", "failed",
+                job_id,
+                "valuation",
+                "failed",
                 f"Market valuation failed (non-fatal): {str(e)}",
                 details={"error_type": type(e).__name__, "traceback": traceback.format_exc()},
             )
             logger.warning("Valuation failed (non-fatal): %s", e)
     else:
-        add_log_entry(
-            job_id, "valuation", "warning",
-            "Skipping valuation: make/model not identified from transcript"
-        )
+        add_log_entry(job_id, "valuation", "warning", "Skipping valuation: make/model not identified from transcript")
 
     return condition_report_json, condition_score, valuation_result, cost
 
@@ -328,16 +332,17 @@ def _run_pipeline(job_id: str, video_path: str, progress_base: int = 5, progress
             timer.add_detail("frames_dir", frames_dir)
 
         try:
-            with open(transcript_path, 'r') as f:
+            with open(transcript_path, "r") as f:
                 transcript_data = json.load(f)
                 transcript_text = (
-                    transcript_data.get('text', '')
-                    if isinstance(transcript_data, dict)
-                    else str(transcript_data)
+                    transcript_data.get("text", "") if isinstance(transcript_data, dict) else str(transcript_data)
                 )
                 truncated = transcript_text[:8000] if len(transcript_text) > 8000 else transcript_text
                 add_log_entry(
-                    job_id, "transcript", "info", "Transcript generated",
+                    job_id,
+                    "transcript",
+                    "info",
+                    "Transcript generated",
                     details={
                         "transcript_text": truncated,
                         "total_length": len(transcript_text),
@@ -399,16 +404,27 @@ def _run_pipeline(job_id: str, video_path: str, progress_base: int = 5, progress
             }
 
         total_duration = int((time.time() - total_start) * 1000)
-        add_log_entry(job_id, "complete", "success", "Processing completed successfully",
-                     duration_ms=total_duration, details=complete_details)
+        add_log_entry(
+            job_id,
+            "complete",
+            "success",
+            "Processing completed successfully",
+            duration_ms=total_duration,
+            details=complete_details,
+        )
 
         update_job_status(job_id, JobStatus.COMPLETE.value, 100, "Complete")
 
     except Exception as e:
         total_duration = int((time.time() - total_start) * 1000)
-        add_log_entry(job_id, "error", "failed", f"Processing failed: {str(e)}",
-                     duration_ms=total_duration,
-                     details={"error_type": type(e).__name__, "traceback": traceback.format_exc()})
+        add_log_entry(
+            job_id,
+            "error",
+            "failed",
+            f"Processing failed: {str(e)}",
+            duration_ms=total_duration,
+            details={"error_type": type(e).__name__, "traceback": traceback.format_exc()},
+        )
         update_job_status(job_id, JobStatus.FAILED.value, error=str(e))
         raise
 
@@ -421,8 +437,9 @@ def process_video_task(job_id: str):
         if not job:
             return
         video_path = job.source_path
-        add_log_entry(job_id, "init", "info", "Starting processing for uploaded video",
-                     details={"video_path": video_path})
+        add_log_entry(
+            job_id, "init", "info", "Starting processing for uploaded video", details={"video_path": video_path}
+        )
     finally:
         db.close()
 
@@ -439,8 +456,7 @@ def process_url_task(job_id: str):
         if not job:
             return
         url = job.source_path
-        add_log_entry(job_id, "init", "info", "Starting processing for URL",
-                     details={"url": url})
+        add_log_entry(job_id, "init", "info", "Starting processing for URL", details={"url": url})
     finally:
         db.close()
 

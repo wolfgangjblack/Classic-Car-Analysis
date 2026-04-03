@@ -22,8 +22,7 @@ class VideoProcessingPipeline:
         model_size: str = "medium",
         extract_frames_interval: int = 5,
         subtitle_style: str = (
-            "FontSize=24,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,"
-            "BorderStyle=3,Outline=1,Shadow=0,Alignment=2"
+            "FontSize=24,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Shadow=0,Alignment=2"
         ),
         use_openai_whisper: bool = True,
         client: Optional[OpenAI] = None,
@@ -63,6 +62,7 @@ class VideoProcessingPipeline:
         """Shared OpenAI client for Whisper API."""
         if self._client is None:
             from ..deps import get_openai_client
+
             self._client = get_openai_client()
         return self._client
 
@@ -70,6 +70,7 @@ class VideoProcessingPipeline:
         """Lazy-load the local Whisper model when needed"""
         if self.whisper_model is None:
             import whisper
+
             self.whisper_model = whisper.load_model(self.model_size)
         return self.whisper_model
 
@@ -78,10 +79,18 @@ class VideoProcessingPipeline:
         os.makedirs(os.path.dirname(audio_path), exist_ok=True)
 
         command = [
-            "ffmpeg", "-y", "-i", video_path,
+            "ffmpeg",
+            "-y",
+            "-i",
+            video_path,
             "-vn",  # No video
-            "-ar", "16000", "-ac", "1",
-            "-c:a", "pcm_s16le", audio_path
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            "-c:a",
+            "pcm_s16le",
+            audio_path,
         ]
 
         logger.info("Extracting audio from %s", video_path)
@@ -103,8 +112,7 @@ class VideoProcessingPipeline:
 
         if file_size < 1000:  # Less than 1KB is likely empty/corrupt
             raise VideoProcessingError(
-                f"Audio extraction produced empty file ({file_size} bytes). "
-                "Video may not have audio track."
+                f"Audio extraction produced empty file ({file_size} bytes). Video may not have audio track."
             )
 
         return audio_path
@@ -139,40 +147,23 @@ class VideoProcessingPipeline:
                 model="whisper-1",
                 file=audio_file,
                 response_format="verbose_json",
-                timestamp_granularities=["word", "segment"]
+                timestamp_granularities=["word", "segment"],
             )
 
         # Convert OpenAI response to our TranscriptData format
         segments = []
-        if hasattr(result, 'segments') and result.segments:
+        if hasattr(result, "segments") and result.segments:
             for segment in result.segments:
                 words = None
-                if hasattr(result, 'words') and result.words:
+                if hasattr(result, "words") and result.words:
                     # Filter words that belong to this segment
-                    segment_words = [
-                        w for w in result.words
-                        if w.start >= segment.start and w.end <= segment.end
-                    ]
+                    segment_words = [w for w in result.words if w.start >= segment.start and w.end <= segment.end]
                     if segment_words:
-                        words = [
-                            WordTimestamp(
-                                word=w.word,
-                                start=w.start,
-                                end=w.end
-                            ) for w in segment_words
-                        ]
+                        words = [WordTimestamp(word=w.word, start=w.start, end=w.end) for w in segment_words]
 
-                segments.append(SegmentTimestamp(
-                    text=segment.text,
-                    start=segment.start,
-                    end=segment.end,
-                    words=words
-                ))
+                segments.append(SegmentTimestamp(text=segment.text, start=segment.start, end=segment.end, words=words))
 
-        transcript = TranscriptData(
-            segments=segments,
-            text=result.text if hasattr(result, 'text') else ""
-        )
+        transcript = TranscriptData(segments=segments, text=result.text if hasattr(result, "text") else "")
 
         logger.info("OpenAI Whisper transcription complete. Text length: %d", len(transcript.text))
         return transcript
@@ -190,15 +181,15 @@ class VideoProcessingPipeline:
                     start=segment["start"],
                     end=segment["end"],
                     words=[
-                        WordTimestamp(
-                            word=word["word"],
-                            start=word["start"],
-                            end=word["end"]
-                        ) for word in segment.get("words", [])
-                    ] if "words" in segment else None
-                ) for segment in result["segments"]
+                        WordTimestamp(word=word["word"], start=word["start"], end=word["end"])
+                        for word in segment.get("words", [])
+                    ]
+                    if "words" in segment
+                    else None,
+                )
+                for segment in result["segments"]
             ],
-            text=result["text"]
+            text=result["text"],
         )
 
         return transcript
@@ -219,13 +210,13 @@ class VideoProcessingPipeline:
         td = timedelta(seconds=seconds)
         minutes, seconds = divmod(td.seconds, 60)
         hours, minutes = divmod(minutes, 60)
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{td.microseconds//1000:03d}"
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{td.microseconds // 1000:03d}"
 
     def create_subtitle_file(self, transcript: TranscriptData, output_srt_path: str) -> str:
         """Create an SRT subtitle file with words appearing as they're spoken"""
         segments = transcript.segments
 
-        with open(output_srt_path, 'w', encoding='utf-8') as srt_file:
+        with open(output_srt_path, "w", encoding="utf-8") as srt_file:
             subtitle_index = 1
 
             for segment in segments:
@@ -241,20 +232,14 @@ class VideoProcessingPipeline:
                         current_group.append(word)
 
                         if len(current_group) >= 4:
-                            word_groups.append({
-                                "start": current_start,
-                                "end": word.end,
-                                "words": current_group
-                            })
+                            word_groups.append({"start": current_start, "end": word.end, "words": current_group})
                             current_group = []
                             current_start = None
 
                     if current_group:
-                        word_groups.append({
-                            "start": current_start,
-                            "end": current_group[-1].end,
-                            "words": current_group
-                        })
+                        word_groups.append(
+                            {"start": current_start, "end": current_group[-1].end, "words": current_group}
+                        )
 
                     for group in word_groups:
                         start_time = group["start"]
@@ -281,9 +266,15 @@ class VideoProcessingPipeline:
 
         escaped_path = subtitle_path.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
         command = [
-            "ffmpeg", "-y", "-i", video_path,
-            "-vf", f"subtitles='{escaped_path}':force_style='{self.subtitle_style}'",
-            "-c:a", "copy", output_path
+            "ffmpeg",
+            "-y",
+            "-i",
+            video_path,
+            "-vf",
+            f"subtitles='{escaped_path}':force_style='{self.subtitle_style}'",
+            "-c:a",
+            "copy",
+            output_path,
         ]
 
         try:
@@ -299,11 +290,11 @@ class VideoProcessingPipeline:
 
     def save_transcript_formats(self, transcript: TranscriptData, json_path: str, txt_path: str) -> tuple[str, str]:
         """Save transcript in both JSON and human-readable formats"""
-        with open(json_path, 'w', encoding='utf-8') as json_file:
+        with open(json_path, "w", encoding="utf-8") as json_file:
             json_content = transcript.model_dump_json(indent=2)
             json_file.write(json_content)
 
-        with open(txt_path, 'w', encoding='utf-8') as txt_file:
+        with open(txt_path, "w", encoding="utf-8") as txt_file:
             for segment in transcript.segments:
                 start_formatted = self.format_timestamp_readable(segment.start)
                 end_formatted = self.format_timestamp_readable(segment.end)
@@ -352,7 +343,7 @@ class VideoProcessingPipeline:
         """Process a video, create captioned version, save transcript and extract frames"""
         video_path = os.path.abspath(video_path)
 
-        filename = Path(video_path).stem.replace(' ', '_').replace('-', '_')
+        filename = Path(video_path).stem.replace(" ", "_").replace("-", "_")
         file_extension = Path(video_path).suffix
 
         audio_path = os.path.join(self.audio_dir, f"{filename}.wav")
@@ -402,14 +393,18 @@ class VideoProcessingPipeline:
             transcript_json_path=json_path,
             transcript_txt_path=txt_path,
             frames_dir=video_frames_dir,
-            duration_seconds=duration
+            duration_seconds=duration,
         )
 
         if progress_callback:
             progress_callback("complete", 100)
 
-        logger.info("Video processing complete. Captioned=%s, Transcript=%s, Frames=%s",
-                    captioned_video_path, json_path, video_frames_dir)
+        logger.info(
+            "Video processing complete. Captioned=%s, Transcript=%s, Frames=%s",
+            captioned_video_path,
+            json_path,
+            video_frames_dir,
+        )
 
         return result
 

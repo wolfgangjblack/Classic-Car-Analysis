@@ -8,6 +8,7 @@ from app.models.db import JobStatus, SourceType
 
 # --- parse_logs (unit, called by endpoints) ---
 
+
 def test_parse_logs_invalid_json():
     assert parse_logs("not json") == []
     assert parse_logs("") == []
@@ -22,6 +23,7 @@ def test_parse_logs_valid():
 
 
 # --- GET /api/jobs ---
+
 
 def test_list_jobs_with_data(test_client, sample_job):
     sample_job(original_filename="Job A")
@@ -46,6 +48,7 @@ def test_list_jobs_filter_status(test_client, sample_job):
 
 
 # --- GET /api/jobs/{id} ---
+
 
 def test_get_job_detail(test_client, sample_job):
     job = sample_job(
@@ -72,13 +75,19 @@ def test_get_job_not_found(test_client):
 
 # --- GET /api/jobs/{id}/logs ---
 
+
 def test_get_job_logs(test_client, sample_job):
-    logs_data = json.dumps([
-        {
-            "timestamp": "2025-01-01T00:00:00", "phase": "download",
-            "status": "completed", "message": "Done", "duration_ms": 5000,
-        }
-    ])
+    logs_data = json.dumps(
+        [
+            {
+                "timestamp": "2025-01-01T00:00:00",
+                "phase": "download",
+                "status": "completed",
+                "message": "Done",
+                "duration_ms": 5000,
+            }
+        ]
+    )
     job = sample_job(logs=logs_data)
     resp = test_client.get(f"/api/jobs/{job.id}/logs")
     assert resp.status_code == 200
@@ -87,6 +96,7 @@ def test_get_job_logs(test_client, sample_job):
 
 
 # --- GET /api/jobs/{id}/summary ---
+
 
 def test_get_job_summary_complete(test_client, sample_job):
     job = sample_job(status=JobStatus.COMPLETE.value, summary="Great car", market_value_low=25000)
@@ -103,6 +113,7 @@ def test_get_job_summary_not_complete(test_client, sample_job):
 
 
 # --- GET /api/jobs/{id}/evidence/{filename} ---
+
 
 def test_evidence_frame_served(test_client, sample_job, tmp_path):
     job = sample_job()
@@ -129,6 +140,7 @@ def test_evidence_frame_missing_file(test_client, sample_job):
 
 
 # --- POST /api/jobs/{id}/retry ---
+
 
 def test_retry_failed_job(test_client, sample_job):
     job = sample_job(
@@ -176,6 +188,7 @@ def test_retry_url_vs_upload(test_client, sample_job):
 
 
 # --- DELETE /api/jobs/{id} ---
+
 
 def test_delete_complete_job(test_client, sample_job):
     job = sample_job(status=JobStatus.COMPLETE.value)

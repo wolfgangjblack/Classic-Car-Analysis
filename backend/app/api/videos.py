@@ -15,11 +15,7 @@ router = APIRouter()
 
 
 @router.post("/upload", response_model=JobResponse)
-async def upload_video(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db)
-):
+async def upload_video(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
     """Upload a video file for processing"""
     settings = get_settings()
 
@@ -27,8 +23,7 @@ async def upload_video(
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in valid_extensions:
         raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type. Supported types: {', '.join(valid_extensions)}"
+            status_code=400, detail=f"Invalid file type. Supported types: {', '.join(valid_extensions)}"
         )
 
     job_id = str(uuid.uuid4())
@@ -50,13 +45,14 @@ async def upload_video(
         original_filename=file.filename,
         status=JobStatus.PENDING.value,
         progress=0,
-        created_at=datetime.now(timezone.utc)
+        created_at=datetime.now(timezone.utc),
     )
     db.add(job)
     db.commit()
     db.refresh(job)
 
     from ..workers.tasks import process_video_task
+
     background_tasks.add_task(process_video_task, job_id)
 
     return JobResponse(
@@ -69,16 +65,12 @@ async def upload_video(
         created_at=job.created_at,
         started_at=job.started_at,
         completed_at=job.completed_at,
-        error=job.error
+        error=job.error,
     )
 
 
 @router.post("/url", response_model=JobResponse)
-async def submit_url(
-    background_tasks: BackgroundTasks,
-    submission: URLSubmission,
-    db: Session = Depends(get_db)
-):
+async def submit_url(background_tasks: BackgroundTasks, submission: URLSubmission, db: Session = Depends(get_db)):
     """Submit a YouTube or video URL for processing"""
     url = submission.url
 
@@ -94,13 +86,14 @@ async def submit_url(
         original_filename=url,
         status=JobStatus.PENDING.value,
         progress=0,
-        created_at=datetime.now(timezone.utc)
+        created_at=datetime.now(timezone.utc),
     )
     db.add(job)
     db.commit()
     db.refresh(job)
 
     from ..workers.tasks import process_url_task
+
     background_tasks.add_task(process_url_task, job_id)
 
     return JobResponse(
@@ -113,5 +106,5 @@ async def submit_url(
         created_at=job.created_at,
         started_at=job.started_at,
         completed_at=job.completed_at,
-        error=job.error
+        error=job.error,
     )

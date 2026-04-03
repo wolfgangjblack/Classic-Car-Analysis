@@ -14,6 +14,7 @@ def analyzer():
 
 # --- _parse_response ---
 
+
 def test_parse_response_clean_json(analyzer):
     raw = '{"score": 5, "notes": "excellent"}'
     result = analyzer._parse_response(raw)
@@ -32,6 +33,7 @@ def test_parse_response_invalid_json(analyzer):
 
 
 # --- _compute_overall_score ---
+
 
 def test_compute_overall_score_all_visible(analyzer):
     area_scores = {
@@ -70,6 +72,7 @@ def test_compute_overall_score_empty(analyzer):
 
 # --- _resolve_evidence_frames ---
 
+
 def test_resolve_evidence_frames_valid(analyzer):
     observations = {
         "good": [{"text": "Nice paint", "image_index": 2, "area": "exterior_paint"}],
@@ -105,6 +108,7 @@ def test_resolve_evidence_frames_string_obs(analyzer):
 
 # --- ConditionResult ---
 
+
 def test_get_evidence_frame_paths():
     cr = ConditionResult(
         observations={
@@ -124,6 +128,7 @@ def test_get_evidence_frame_paths():
 
 
 # --- select_frames ---
+
 
 def test_select_frames_fewer_than_max(tmp_path, analyzer):
     for i in range(5):

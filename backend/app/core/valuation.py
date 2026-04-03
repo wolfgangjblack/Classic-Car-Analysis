@@ -45,6 +45,7 @@ class ValuationEngine:
     def client(self) -> OpenAI:
         if self._client is None:
             from ..deps import get_openai_client
+
             self._client = get_openai_client()
         return self._client
 
@@ -216,9 +217,7 @@ class ValuationEngine:
         """
         Full valuation pipeline: web search + bid calculation.
         """
-        mv_low, mv_high, notes, sources, cost = self.lookup_market_value(
-            make, model, year, condition_summary
-        )
+        mv_low, mv_high, notes, sources, cost = self.lookup_market_value(make, model, year, condition_summary)
 
         bid_low, bid_high = self.calculate_bid_range(mv_low, mv_high, condition_score)
 

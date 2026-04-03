@@ -26,11 +26,7 @@ class AgentService:
             )
         return self._pipeline
 
-    def process_transcript(
-        self,
-        transcript_path: str,
-        progress_callback: Optional[Callable] = None
-    ) -> Dict:
+    def process_transcript(self, transcript_path: str, progress_callback: Optional[Callable] = None) -> Dict:
         """
         Process a transcript and generate summary.
 
@@ -42,10 +38,7 @@ class AgentService:
             Dictionary with processing results
         """
         result = self.pipeline.process_transcript(
-            transcript_path,
-            parallel=True,
-            return_results=True,
-            progress_callback=progress_callback
+            transcript_path, parallel=True, return_results=True, progress_callback=progress_callback
         )
         return result
 
@@ -56,7 +49,7 @@ class AgentService:
     def get_cost(self, transcript_name: str) -> float:
         """Get processing cost for a transcript"""
         if transcript_name in self.pipeline.data:
-            return self.pipeline.data[transcript_name].get('token_costs', 0.0)
+            return self.pipeline.data[transcript_name].get("token_costs", 0.0)
         return 0.0
 
     def extract_vehicle_info(self, transcript_name: str) -> Dict:
@@ -69,24 +62,24 @@ class AgentService:
         if transcript_name not in self.pipeline.data:
             return {"make": None, "model": None, "year": None}
 
-        results = self.pipeline.data[transcript_name].get('processing_results', {})
+        results = self.pipeline.data[transcript_name].get("processing_results", {})
 
         make = None
         model = None
         year = None
 
-        if 'basicAgent' in results:
-            basic_data = results['basicAgent']
-            if 'make' in basic_data and basic_data['make']:
-                makes = [m for m in basic_data['make'] if m]
+        if "basicAgent" in results:
+            basic_data = results["basicAgent"]
+            if "make" in basic_data and basic_data["make"]:
+                makes = [m for m in basic_data["make"] if m]
                 if makes:
                     make = makes[0]
-            if 'model' in basic_data and basic_data['model']:
-                models = [m for m in basic_data['model'] if m]
+            if "model" in basic_data and basic_data["model"]:
+                models = [m for m in basic_data["model"] if m]
                 if models:
                     model = models[0]
-            if 'year' in basic_data and basic_data['year']:
-                years = [y for y in basic_data['year'] if y]
+            if "year" in basic_data and basic_data["year"]:
+                years = [y for y in basic_data["year"] if y]
                 if years:
                     year = years[0]
 
@@ -106,9 +99,9 @@ class AgentService:
 
         output_path = os.path.join(output_dir, f"{transcript_name}_summary.txt")
 
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             f.write(summary or "No summary available")
-            f.write(f"\n\n{'='*50}\nToken Cost: ${cost:.6f}")
+            f.write(f"\n\n{'=' * 50}\nToken Cost: ${cost:.6f}")
 
         return output_path
 

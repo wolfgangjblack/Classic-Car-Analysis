@@ -68,8 +68,10 @@ def test_client(db_engine, tmp_path):
     mock_settings.data_dir = tmp_path
     mock_settings.database_url = "sqlite:///:memory:"
 
-    with patch("app.api.jobs.get_settings", return_value=mock_settings), \
-         patch("app.api.videos.get_settings", return_value=mock_settings):
+    with (
+        patch("app.api.jobs.get_settings", return_value=mock_settings),
+        patch("app.api.videos.get_settings", return_value=mock_settings),
+    ):
         with TestClient(app, raise_server_exceptions=False) as client:
             yield client
 
@@ -79,6 +81,7 @@ def test_client(db_engine, tmp_path):
 @pytest.fixture
 def sample_job(db_session):
     """Factory fixture to insert Job rows into the shared test DB."""
+
     def _create(
         status=JobStatus.COMPLETE.value,
         source_type=SourceType.URL.value,

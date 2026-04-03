@@ -1,10 +1,9 @@
 """Tests for backend/app/core/agents.py -- dedup, consolidation, directory loading."""
 
-
-
 from app.core.agents import AgentPipeline, ChatAgent, JsonicAgent
 
 # --- Deduplication (this caught a real production bug) ---
+
 
 def test_dedup_hashable_values():
     pipeline = AgentPipeline()
@@ -63,6 +62,7 @@ def test_dedup_unhashable_values():
 
 # --- _consolidate_agent_results ---
 
+
 def test_consolidate_agent_results():
     pipeline = AgentPipeline()
     pipeline.data = {
@@ -81,6 +81,7 @@ def test_consolidate_agent_results():
 
 
 # --- _load_agents_from_directory ---
+
 
 def test_load_agents_from_directory(tmp_path):
     (tmp_path / "basicAgent.txt").write_text("You extract basic car info. Return JSON.")

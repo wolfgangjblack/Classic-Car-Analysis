@@ -80,6 +80,7 @@ class VisionAnalyzer:
     def client(self) -> OpenAI:
         if self._client is None:
             from ..deps import get_openai_client
+
             self._client = get_openai_client()
         return self._client
 
@@ -129,9 +130,7 @@ class VisionAnalyzer:
         with open(frame_path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
 
-    def build_messages(
-        self, frames: List[str], vehicle_info: Dict[str, str]
-    ) -> List[dict]:
+    def build_messages(self, frames: List[str], vehicle_info: Dict[str, str]) -> List[dict]:
         """Build the multi-image chat message for GPT-4o."""
         vehicle_str = (
             f"{vehicle_info.get('year', 'Unknown')} "
@@ -152,9 +151,7 @@ class VisionAnalyzer:
         ]
 
         for i, frame_path in enumerate(frames):
-            content_parts.append(
-                {"type": "text", "text": f"--- Image {i + 1} ---"}
-            )
+            content_parts.append({"type": "text", "text": f"--- Image {i + 1} ---"})
             b64 = self.encode_frame(frame_path)
             ext = os.path.splitext(frame_path)[1].lower()
             mime = "image/png" if ext == ".png" else "image/jpeg"
@@ -198,9 +195,7 @@ class VisionAnalyzer:
             return 0.0
         return round(weighted_sum / total_weight, 2)
 
-    def _resolve_evidence_frames(
-        self, observations: Dict[str, List], frame_paths: List[str]
-    ) -> Dict[str, List]:
+    def _resolve_evidence_frames(self, observations: Dict[str, List], frame_paths: List[str]) -> Dict[str, List]:
         """Add evidence_frame filename to each observation that has a valid image_index."""
         resolved = {}
         for category in ("good", "bad"):
@@ -220,9 +215,7 @@ class VisionAnalyzer:
         return resolved
 
     @openai_retry
-    def analyze_frames(
-        self, frames_dir: str, vehicle_info: Dict[str, str]
-    ) -> ConditionResult:
+    def analyze_frames(self, frames_dir: str, vehicle_info: Dict[str, str]) -> ConditionResult:
         """Run the full vision analysis pipeline."""
         frames = self.select_frames(frames_dir)
         logger.info("Selected %d frames for vision analysis", len(frames))
@@ -253,9 +246,7 @@ class VisionAnalyzer:
         if parsed.get("overall_score", 0) > 0:
             overall = parsed["overall_score"]
 
-        observations = self._resolve_evidence_frames(
-            parsed.get("observations", {"good": [], "bad": []}), frames
-        )
+        observations = self._resolve_evidence_frames(parsed.get("observations", {"good": [], "bad": []}), frames)
 
         return ConditionResult(
             observations=observations,

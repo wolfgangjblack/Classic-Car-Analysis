@@ -33,6 +33,7 @@ class Agent(ABC):
     def client(self) -> OpenAI:
         if self._client is None:
             from ..deps import get_openai_client
+
             self._client = get_openai_client()
         return self._client
 
@@ -42,11 +43,7 @@ class Agent(ABC):
         pass
 
     def describe(self) -> str:
-        return (
-            f"{self.__class__.__name__}\n"
-            f"  LLM: {self.llm}\n"
-            f"  Prompt: {self.system_prompt[:120]}...\n"
-        )
+        return f"{self.__class__.__name__}\n  LLM: {self.llm}\n  Prompt: {self.system_prompt[:120]}...\n"
 
     def get_cost(self):
         return self.token_cost
@@ -69,10 +66,7 @@ class Agent(ABC):
             response_format={"type": "json_object"},
         )
 
-        cost = (
-            completion.usage.prompt_tokens * input_cost
-            + completion.usage.completion_tokens * output_cost
-        )
+        cost = completion.usage.prompt_tokens * input_cost + completion.usage.completion_tokens * output_cost
         return completion.choices[0].message.content.strip(), cost
 
     @openai_retry
@@ -92,10 +86,7 @@ class Agent(ABC):
             temperature=temperature,
         )
 
-        cost = (
-            completion.usage.prompt_tokens * input_cost
-            + completion.usage.completion_tokens * output_cost
-        )
+        cost = completion.usage.prompt_tokens * input_cost + completion.usage.completion_tokens * output_cost
         return completion.choices[0].message.content.strip(), cost
 
 
@@ -171,7 +162,7 @@ class AgentPipeline:
             agents_dir: Directory containing agent prompt files
             client: Shared OpenAI client (falls back to deps.get_openai_client)
         """
-        self.agents = {'processing': [], 'summarizing': []}
+        self.agents = {"processing": [], "summarizing": []}
         self.data = {}
         self.summaries = {}
         self.total_cost = 0.0
@@ -191,27 +182,28 @@ class AgentPipeline:
             if not os.path.isfile(path):
                 continue
 
-            with open(path, 'r') as f:
+            with open(path, "r") as f:
                 prompt = f.read()
 
             if not prompt.strip():
                 continue
 
-            agent_name = filename.split('.')[0]
+            agent_name = filename.split(".")[0]
 
-            if 'summary' in filename.lower():
-                self.agents['summarizing'].append(
-                    ChatAgent(name=agent_name, system_prompt=prompt, client=self._client)
-                )
+            if "summary" in filename.lower():
+                self.agents["summarizing"].append(ChatAgent(name=agent_name, system_prompt=prompt, client=self._client))
             else:
-                self.agents['processing'].append(
+                self.agents["processing"].append(
                     JsonicAgent(name=agent_name, system_prompt=prompt, client=self._client)
                 )
 
-        logger.info("Loaded %d processing agents and %d summarizing agents",
-                    len(self.agents['processing']), len(self.agents['summarizing']))
+        logger.info(
+            "Loaded %d processing agents and %d summarizing agents",
+            len(self.agents["processing"]),
+            len(self.agents["summarizing"]),
+        )
 
-    def add_agent(self, agent, agent_type='processing'):
+    def add_agent(self, agent, agent_type="processing"):
         """
         Add an agent to the pipeline.
 
@@ -225,11 +217,7 @@ class AgentPipeline:
         self.agents[agent_type].append(agent)
 
     def process_transcript(
-        self,
-        transcript_path: str,
-        parallel: bool = True,
-        return_results: bool = True,
-        progress_callback=None
+        self, transcript_path: str, parallel: bool = True, return_results: bool = True, progress_callback=None
     ):
         """
         Process a single transcript through the pipeline.
@@ -246,7 +234,7 @@ class AgentPipeline:
         transcript_name = os.path.basename(transcript_path)
 
         try:
-            with open(transcript_path, 'r') as f:
+            with open(transcript_path, "r") as f:
                 transcript = json.load(f)
         except json.JSONDecodeError:
             logger.error("Could not parse JSON from %s", transcript_path)
@@ -258,14 +246,14 @@ class AgentPipeline:
         chunks = chunk_transcript_by_time(transcript)
 
         self.data[transcript_name] = {
-            'text': transcript.get('text', ''),
-            'chunks': chunks,
-            'processing_results': {},
-            'summary': None,
-            'token_costs': 0.0
+            "text": transcript.get("text", ""),
+            "chunks": chunks,
+            "processing_results": {},
+            "summary": None,
+            "token_costs": 0.0,
         }
 
-        for agent in self.agents['processing']:
+        for agent in self.agents["processing"]:
             agent.data = {}
             agent.token_cost = 0
 
@@ -278,7 +266,7 @@ class AgentPipeline:
             self._sequential_process_chunks(transcript_name, chunks)
 
         transcript_cost = 0.0
-        for agent in self.agents['processing']:
+        for agent in self.agents["processing"]:
             clean_data = {}
             for k, v in agent.data.items():
                 try:
@@ -289,10 +277,10 @@ class AgentPipeline:
                         if item not in seen:
                             seen.append(item)
                     clean_data[k] = seen
-            self.data[transcript_name]['processing_results'][agent.name] = clean_data
+            self.data[transcript_name]["processing_results"][agent.name] = clean_data
             transcript_cost += agent.get_cost()
 
-        self.data[transcript_name]['token_costs'] = transcript_cost
+        self.data[transcript_name]["token_costs"] = transcript_cost
         self.total_cost += transcript_cost
 
         consolidated_text = self._consolidate_agent_results(transcript_name)
@@ -300,16 +288,16 @@ class AgentPipeline:
         if progress_callback:
             progress_callback("generating_summary", 80)
 
-        if self.agents['summarizing']:
+        if self.agents["summarizing"]:
             summary = self._generate_summary(consolidated_text)
-            self.data[transcript_name]['summary'] = summary
+            self.data[transcript_name]["summary"] = summary
             self.summaries[transcript_name] = summary
 
             summary_cost = 0.0
-            for agent in self.agents['summarizing']:
+            for agent in self.agents["summarizing"]:
                 summary_cost += agent.get_cost()
 
-            self.data[transcript_name]['token_costs'] += summary_cost
+            self.data[transcript_name]["token_costs"] += summary_cost
             self.total_cost += summary_cost
 
         if progress_callback:
@@ -325,14 +313,10 @@ class AgentPipeline:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = []
             for chunk in chunks:
-                for agent in self.agents['processing']:
+                for agent in self.agents["processing"]:
                     futures.append(executor.submit(agent, chunk))
 
-            for future in tqdm(
-                concurrent.futures.as_completed(futures),
-                total=len(futures),
-                desc="Processing chunks"
-            ):
+            for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Processing chunks"):
                 pass
 
     def _sequential_process_chunks(self, transcript_name: str, chunks: List[str]):
@@ -341,7 +325,7 @@ class AgentPipeline:
 
         for i, chunk in enumerate(chunks):
             logger.debug("Processing chunk %d/%d", i + 1, len(chunks))
-            for agent in self.agents['processing']:
+            for agent in self.agents["processing"]:
                 agent(chunk)
 
     def _consolidate_agent_results(self, transcript_name: str) -> str:
@@ -351,7 +335,7 @@ class AgentPipeline:
         """
         consolidated_text = f"Transcript: {transcript_name}\n\n"
 
-        for agent_name, agent_data in self.data[transcript_name]['processing_results'].items():
+        for agent_name, agent_data in self.data[transcript_name]["processing_results"].items():
             consolidated_text += f"{agent_name}:\n{json.dumps(agent_data, indent=2)}\n\n"
 
         return consolidated_text
@@ -360,7 +344,7 @@ class AgentPipeline:
         """Generate a summary from the consolidated text using summarizing agents"""
         summary = ""
 
-        for agent in self.agents['summarizing']:
+        for agent in self.agents["summarizing"]:
             agent.token_cost = 0
             agent_summary = agent(consolidated_text)
             summary += f"{agent.name} Summary:\n{agent_summary}\n\n"
@@ -372,7 +356,7 @@ class AgentPipeline:
         transcript_paths: List[str],
         parallel_transcripts: bool = False,
         parallel_chunks: bool = True,
-        return_results: bool = True
+        return_results: bool = True,
     ):
         """
         Process multiple transcripts through the pipeline.
@@ -395,9 +379,7 @@ class AgentPipeline:
                 }
 
                 for future in tqdm(
-                    concurrent.futures.as_completed(futures),
-                    total=len(futures),
-                    desc="Processing transcripts"
+                    concurrent.futures.as_completed(futures), total=len(futures), desc="Processing transcripts"
                 ):
                     transcript_path = futures[future]
                     try:
@@ -442,11 +424,11 @@ class AgentPipeline:
 
         def save_single_summary(transcript_name, summary):
             summary_text = summary
-            token_cost = self.data[transcript_name].get('token_costs', 0)
-            summary_with_cost = f"{summary_text}\n\n{'='*50}\nToken Cost: ${token_cost:.6f}"
+            token_cost = self.data[transcript_name].get("token_costs", 0)
+            summary_with_cost = f"{summary_text}\n\n{'=' * 50}\nToken Cost: ${token_cost:.6f}"
 
             output_path = os.path.join(output_dir, f"{transcript_name}_summary.txt")
-            with open(output_path, 'w') as f:
+            with open(output_path, "w") as f:
                 f.write(summary_with_cost)
 
             return output_path
@@ -461,9 +443,7 @@ class AgentPipeline:
 
                 saved_paths = []
                 for future in tqdm(
-                    concurrent.futures.as_completed(futures),
-                    total=len(futures),
-                    desc="Saving summaries"
+                    concurrent.futures.as_completed(futures), total=len(futures), desc="Saving summaries"
                 ):
                     transcript_name = futures[future]
                     try:

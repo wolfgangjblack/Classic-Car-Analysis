@@ -11,6 +11,7 @@ def engine():
 
 # --- _get_condition_multiplier ---
 
+
 def test_condition_multiplier_score_5(engine):
     assert engine._get_condition_multiplier(5.0) == (0.95, 1.05)
 
@@ -36,6 +37,7 @@ def test_condition_multiplier_clamp_low(engine):
 
 # --- calculate_bid_range ---
 
+
 def test_calculate_bid_range_excellent(engine):
     bid_low, bid_high = engine.calculate_bid_range(40000, 60000, 5.0)
     # midpoint=50000, Score 5: 0.95 * 50000 = 47500, 1.05 * 50000 = 52500
@@ -56,6 +58,7 @@ def test_calculate_bid_range_zero_market(engine):
 
 
 # --- _parse_valuation_response ---
+
 
 def test_parse_valuation_json_response(engine):
     text = (

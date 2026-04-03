@@ -108,7 +108,5 @@ def _migrate_add_columns(engine):
             existing = {col["name"] for col in inspector.get_columns(table)}
             for col_name, col_type in columns:
                 if col_name not in existing:
-                    conn.execute(
-                        sa_text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
-                    )
+                    conn.execute(sa_text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
             conn.commit()

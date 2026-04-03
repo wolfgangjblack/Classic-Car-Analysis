@@ -29,11 +29,7 @@ class VideoService:
             )
         return self._pipeline
 
-    def process_video(
-        self,
-        video_path: str,
-        progress_callback: Optional[Callable] = None
-    ):
+    def process_video(self, video_path: str, progress_callback: Optional[Callable] = None):
         """
         Process a video file.
 
@@ -48,7 +44,7 @@ class VideoService:
 
     def get_transcript_path(self, video_path: str) -> str:
         """Get the expected transcript path for a video"""
-        filename = Path(video_path).stem.replace(' ', '_').replace('-', '_')
+        filename = Path(video_path).stem.replace(" ", "_").replace("-", "_")
         return str(self.settings.transcripts_dir / f"{filename}.json")
 
 

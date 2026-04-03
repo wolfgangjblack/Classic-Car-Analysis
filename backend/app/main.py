@@ -68,12 +68,7 @@ async def get_costs():
             "completed_jobs": len(completed_jobs),
             "total_cost": total_cost,
             "jobs": [
-                {
-                    "id": j.id,
-                    "filename": j.original_filename,
-                    "cost": j.cost or 0,
-                    "status": j.status
-                }
+                {"id": j.id, "filename": j.original_filename, "cost": j.cost or 0, "status": j.status}
                 for j in jobs_list
-            ]
+            ],
         }
