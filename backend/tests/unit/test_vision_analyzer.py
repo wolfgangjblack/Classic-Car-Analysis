@@ -4,8 +4,7 @@ import json
 import os
 
 import pytest
-
-from app.core.vision_analyzer import VisionAnalyzer, ConditionResult
+from app.core.vision_analyzer import ConditionResult, VisionAnalyzer
 
 
 @pytest.fixture

@@ -1,12 +1,11 @@
 import json
 import logging
 import re
-from typing import Optional, Tuple
 from dataclasses import dataclass
+from typing import Optional, Tuple
 
 from openai import OpenAI
 
-from ..exceptions import ValuationError
 from .retry import openai_retry
 
 logger = logging.getLogger(__name__)

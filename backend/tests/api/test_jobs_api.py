@@ -3,11 +3,8 @@
 import json
 from unittest.mock import patch
 
-import pytest
-
-from app.models.db import JobStatus, SourceType
 from app.api.jobs import parse_logs
-
+from app.models.db import JobStatus, SourceType
 
 # --- parse_logs (unit, called by endpoints) ---
 
@@ -77,7 +74,10 @@ def test_get_job_not_found(test_client):
 
 def test_get_job_logs(test_client, sample_job):
     logs_data = json.dumps([
-        {"timestamp": "2025-01-01T00:00:00", "phase": "download", "status": "completed", "message": "Done", "duration_ms": 5000}
+        {
+            "timestamp": "2025-01-01T00:00:00", "phase": "download",
+            "status": "completed", "message": "Done", "duration_ms": 5000,
+        }
     ])
     job = sample_job(logs=logs_data)
     resp = test_client.get(f"/api/jobs/{job.id}/logs")

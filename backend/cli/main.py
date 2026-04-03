@@ -5,20 +5,18 @@ Classic Car Analysis CLI
 Command-line interface for processing classic car videos and generating summaries.
 """
 
-import os
 from pathlib import Path
 from typing import Optional
 
 import typer
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
-from rich.table import Table
-from rich.panel import Panel
-
 from app.config import get_settings
-from app.services.video_service import VideoService
 from app.services.agent_service import AgentService
 from app.services.downloader import VideoDownloader
+from app.services.video_service import VideoService
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+from rich.table import Table
 
 app = typer.Typer(
     name="car-analysis",
@@ -47,7 +45,7 @@ def process(
 ):
     """
     Process a video file and generate analysis summary.
-    
+
     This command extracts audio, transcribes it, and generates an AI summary
     of the classic car details mentioned in the video.
     """
@@ -56,10 +54,10 @@ def process(
         raise typer.Exit(1)
 
     settings = get_settings()
-    
+
     if output_dir:
         settings.data_dir = output_dir
-    
+
     settings.whisper_model_size = model_size
     settings.ensure_directories()
 
@@ -138,7 +136,7 @@ def summarize(
 ):
     """
     Generate summary from an existing transcript file.
-    
+
     Use this if you already have a transcript JSON and just want to run
     the AI analysis.
     """
@@ -159,7 +157,7 @@ def summarize(
         TextColumn("[progress.description]{task.description}"),
         console=console
     ) as progress:
-        task = progress.add_task("Processing transcript...", total=None)
+        progress.add_task("Processing transcript...", total=None)
         agent_service.process_transcript(str(transcript_path))
 
     transcript_name = transcript_path.name
@@ -197,7 +195,7 @@ def download(
 ):
     """
     Download a video from URL and optionally process it.
-    
+
     Supports YouTube and many other video platforms via yt-dlp.
     """
     settings = get_settings()
@@ -234,7 +232,6 @@ def download(
 
     if process_video:
         console.print("\n[bold]Processing video...[/bold]")
-        ctx = typer.Context(app)
         process(Path(video_path))
 
 

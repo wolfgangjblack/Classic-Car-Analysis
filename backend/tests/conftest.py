@@ -1,17 +1,16 @@
-import json
 import sys
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from app.deps import get_db  # noqa: E402
+from app.main import app  # noqa: E402
+from app.models.db import Base, Job, JobStatus, SourceType
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-
-from app.models.db import Base, Job, JobStatus, SourceType
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -25,10 +24,6 @@ def _mock_heavy_imports():
     for mod_name, mod in mods.items():
         if sys.modules.get(mod_name) is mod:
             del sys.modules[mod_name]
-
-
-from app.main import app
-from app.deps import get_db
 
 
 @pytest.fixture

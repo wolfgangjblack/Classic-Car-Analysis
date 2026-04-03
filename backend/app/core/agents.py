@@ -1,10 +1,10 @@
-import os
+import concurrent.futures
 import json
 import logging
+import os
 import threading
-import concurrent.futures
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 from tqdm import tqdm

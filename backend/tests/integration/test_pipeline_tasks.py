@@ -1,20 +1,18 @@
 """Tests for backend/app/workers/tasks.py -- _run_vision_and_valuation orchestration."""
 
 import json
-import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+from app.core.valuation import ValuationResult
+from app.core.vision_analyzer import ConditionResult
+from app.models.db import Base, Job, JobStatus, SourceType
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-
-from app.models.db import Base, Job, JobStatus, SourceType
-from app.core.vision_analyzer import ConditionResult
-from app.core.valuation import ValuationResult
 
 
 @pytest.fixture
@@ -100,7 +98,10 @@ def _mock_valuation_result():
     )
 
 
-def _run_with_patches(pipeline_db, job_id, frames_dir, vehicle_info, cost, condition, valuation=None, valuation_error=None, tmp_path=None):
+def _run_with_patches(
+    pipeline_db, job_id, frames_dir, vehicle_info, cost, condition,
+    valuation=None, valuation_error=None, tmp_path=None,
+):
     """Helper that patches all external deps and runs _run_vision_and_valuation."""
     from app.workers.tasks import _run_vision_and_valuation
 

@@ -1,16 +1,16 @@
 import logging
 import os
 import subprocess
+from datetime import timedelta
+from pathlib import Path
 from typing import Optional
 
 import cv2
-from pathlib import Path
-from datetime import timedelta
 from openai import OpenAI
 
-from ..exceptions import VideoProcessingError, TranscriptionError
-from .video_classes import WordTimestamp, SegmentTimestamp, TranscriptData, VideoProcessingResult
+from ..exceptions import VideoProcessingError
 from .retry import openai_retry
+from .video_classes import SegmentTimestamp, TranscriptData, VideoProcessingResult, WordTimestamp
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,10 @@ class VideoProcessingPipeline:
         output_dir: str = "processed_videos",
         model_size: str = "medium",
         extract_frames_interval: int = 5,
-        subtitle_style: str = "FontSize=24,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Shadow=0,Alignment=2",
+        subtitle_style: str = (
+            "FontSize=24,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,"
+            "BorderStyle=3,Outline=1,Shadow=0,Alignment=2"
+        ),
         use_openai_whisper: bool = True,
         client: Optional[OpenAI] = None,
     ):
@@ -97,9 +100,12 @@ class VideoProcessingPipeline:
         # Validate the audio file has actual content
         file_size = os.path.getsize(audio_path)
         logger.info("Extracted audio file size: %d bytes", file_size)
-        
+
         if file_size < 1000:  # Less than 1KB is likely empty/corrupt
-            raise VideoProcessingError(f"Audio extraction produced empty file ({file_size} bytes). Video may not have audio track.")
+            raise VideoProcessingError(
+                f"Audio extraction produced empty file ({file_size} bytes). "
+                "Video may not have audio track."
+            )
 
         return audio_path
 

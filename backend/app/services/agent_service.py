@@ -1,13 +1,11 @@
 import os
-import json
-from pathlib import Path
-from typing import Optional, Dict, Callable
+from typing import Callable, Dict, Optional
 
 from openai import OpenAI
 
 from ..config import get_settings
-from ..deps import get_openai_client
 from ..core.agents import AgentPipeline
+from ..deps import get_openai_client
 
 
 class AgentService:

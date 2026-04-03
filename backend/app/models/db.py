@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime, timezone
-
-from sqlalchemy import create_engine, inspect, Column, String, Integer, Float, Text, DateTime, text as sa_text
-from sqlalchemy.orm import declarative_base, sessionmaker
 from enum import Enum
+
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, inspect
+from sqlalchemy import text as sa_text
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 Base = declarative_base()
 

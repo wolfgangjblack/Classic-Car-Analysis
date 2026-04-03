@@ -1,17 +1,16 @@
 import json
 import shutil
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..deps import get_db
 from ..models.db import Job, JobStatus, SourceType
-from ..models.schemas import JobResponse, JobDetailResponse, JobListResponse, JobLogsResponse, LogEntry
-
+from ..models.schemas import JobDetailResponse, JobListResponse, JobLogsResponse, JobResponse, LogEntry
 
 router = APIRouter()
 

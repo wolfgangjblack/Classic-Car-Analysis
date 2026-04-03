@@ -1,12 +1,8 @@
 """Tests for backend/app/core/agents.py -- dedup, consolidation, directory loading."""
 
-import json
-import os
 
-import pytest
 
-from app.core.agents import AgentPipeline, JsonicAgent, ChatAgent
-
+from app.core.agents import AgentPipeline, ChatAgent, JsonicAgent
 
 # --- Deduplication (this caught a real production bug) ---
 

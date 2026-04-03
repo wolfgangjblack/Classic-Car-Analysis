@@ -1,10 +1,9 @@
 import logging
-import os
-from pathlib import Path
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic_settings import BaseSettings
 from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):

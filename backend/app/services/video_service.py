@@ -1,11 +1,11 @@
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 from openai import OpenAI
 
 from ..config import get_settings
-from ..deps import get_openai_client
 from ..core.video_pipeline import VideoProcessingPipeline
+from ..deps import get_openai_client
 
 
 class VideoService:

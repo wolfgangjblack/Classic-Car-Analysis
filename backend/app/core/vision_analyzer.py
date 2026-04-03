@@ -3,12 +3,11 @@ import glob
 import json
 import logging
 import os
-from typing import Dict, List, Optional
 from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 from openai import OpenAI
 
-from ..exceptions import VisionAnalysisError
 from .retry import openai_retry
 
 logger = logging.getLogger(__name__)
@@ -134,7 +133,11 @@ class VisionAnalyzer:
         self, frames: List[str], vehicle_info: Dict[str, str]
     ) -> List[dict]:
         """Build the multi-image chat message for GPT-4o."""
-        vehicle_str = f"{vehicle_info.get('year', 'Unknown')} {vehicle_info.get('make', 'Unknown')} {vehicle_info.get('model', 'Unknown')}"
+        vehicle_str = (
+            f"{vehicle_info.get('year', 'Unknown')} "
+            f"{vehicle_info.get('make', 'Unknown')} "
+            f"{vehicle_info.get('model', 'Unknown')}"
+        )
         system_prompt = self.prompt_template.replace("{vehicle_info}", vehicle_str)
 
         content_parts = [

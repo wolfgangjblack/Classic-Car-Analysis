@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .exceptions import CarAnalysisError
-from .models.db import get_engine, create_session_factory
+from .models.db import create_session_factory, get_engine
 
 
 @lru_cache()

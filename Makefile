@@ -1,10 +1,13 @@
-.PHONY: install install-dev test lint format typecheck docker-up docker-down
+.PHONY: install install-dev test lint format typecheck docker-up docker-down requirements
 
 install:
 	pip install -e .
 
 install-dev:
 	pip install -e ".[dev]"
+
+requirements:
+	pip-compile pyproject.toml --output-file=backend/requirements.txt --strip-extras --no-header --no-annotate --no-emit-index-url
 
 test:
 	cd backend && python -m pytest

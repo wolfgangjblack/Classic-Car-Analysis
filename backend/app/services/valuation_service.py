@@ -3,8 +3,8 @@ from typing import Optional
 from openai import OpenAI
 
 from ..config import get_settings
-from ..deps import get_openai_client
 from ..core.valuation import ValuationEngine, ValuationResult
+from ..deps import get_openai_client
 
 
 class ValuationService:

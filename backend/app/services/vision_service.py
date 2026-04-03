@@ -4,8 +4,8 @@ from typing import Dict, Optional
 from openai import OpenAI
 
 from ..config import get_settings
+from ..core.vision_analyzer import ConditionResult, VisionAnalyzer
 from ..deps import get_openai_client
-from ..core.vision_analyzer import VisionAnalyzer, ConditionResult
 
 
 class VisionService:

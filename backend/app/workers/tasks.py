@@ -5,16 +5,15 @@ import shutil
 import time
 import traceback
 from datetime import datetime, timezone
-from pathlib import Path
 
 from ..config import get_settings
 from ..deps import get_db_session
 from ..models.db import Job, JobStatus
-from ..services.downloader import VideoDownloader
-from ..services.video_service import VideoService
 from ..services.agent_service import AgentService
-from ..services.vision_service import VisionService
+from ..services.downloader import VideoDownloader
 from ..services.valuation_service import ValuationService
+from ..services.video_service import VideoService
+from ..services.vision_service import VisionService
 
 logger = logging.getLogger(__name__)
 
@@ -331,10 +330,19 @@ def _run_pipeline(job_id: str, video_path: str, progress_base: int = 5, progress
         try:
             with open(transcript_path, 'r') as f:
                 transcript_data = json.load(f)
-                transcript_text = transcript_data.get('text', '') if isinstance(transcript_data, dict) else str(transcript_data)
-                add_log_entry(job_id, "transcript", "info", "Transcript generated",
-                             details={"transcript_text": transcript_text[:8000] if len(transcript_text) > 8000 else transcript_text,
-                                     "total_length": len(transcript_text)})
+                transcript_text = (
+                    transcript_data.get('text', '')
+                    if isinstance(transcript_data, dict)
+                    else str(transcript_data)
+                )
+                truncated = transcript_text[:8000] if len(transcript_text) > 8000 else transcript_text
+                add_log_entry(
+                    job_id, "transcript", "info", "Transcript generated",
+                    details={
+                        "transcript_text": truncated,
+                        "total_length": len(transcript_text),
+                    },
+                )
         except Exception as e:
             add_log_entry(job_id, "transcript", "warning", f"Could not read transcript: {str(e)}")
 
