@@ -131,7 +131,7 @@ function renderJobs() {
 
     jobsList.innerHTML = jobs.map(job => {
         const name = escapeHtml(job.original_filename || 'Unknown');
-        const safeName = escapeHtml(job.original_filename || 'Job').replace(/'/g, '&#39;');
+        const safeName = escapeForAttr(job.original_filename || 'Job');
         const isComplete = job.status === 'complete';
         const isFailed = job.status === 'failed';
         const isTerminal = ['complete', 'failed', 'cancelled'].includes(job.status);
@@ -418,7 +418,18 @@ async function downloadSummaryPDF(jobId) {
             margin: [10, 10, 10, 10],
             filename: filename,
             image: { type: 'jpeg', quality: 0.95 },
-            html2canvas: { scale: 2, useCORS: true },
+            html2canvas: {
+                scale: 2,
+                useCORS: true,
+                onclone: function(clonedDoc) {
+                    var el = clonedDoc.getElementById('pdfContainer');
+                    if (el) {
+                        el.style.position = 'static';
+                        el.style.left = 'auto';
+                        el.style.width = '700px';
+                    }
+                }
+            },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
             pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
         }).from(container).save();
@@ -435,10 +446,10 @@ function buildPdfHtml(job) {
     html += `<h1 style="font-size: 22px; margin-bottom: 4px;">Vehicle Analysis Report</h1>`;
     html += `<p style="color: #64748b; margin-bottom: 20px;">${escapeHtml(job.original_filename || '')}</p>`;
 
-    html += `<div style="display: flex; gap: 40px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0;">`;
-    html += `<div><span style="font-size: 11px; color: #64748b; text-transform: uppercase;">Make</span><br><strong>${escapeHtml(job.make || '-')}</strong></div>`;
-    html += `<div><span style="font-size: 11px; color: #64748b; text-transform: uppercase;">Model</span><br><strong>${escapeHtml(job.model || '-')}</strong></div>`;
-    html += `<div><span style="font-size: 11px; color: #64748b; text-transform: uppercase;">Year</span><br><strong>${escapeHtml(job.year || '-')}</strong></div>`;
+    html += `<div style="margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0;">`;
+    html += `<div style="display: inline-block; margin-right: 40px; vertical-align: top;"><span style="font-size: 11px; color: #64748b; text-transform: uppercase;">Make</span><br><strong>${escapeHtml(job.make || '-')}</strong></div>`;
+    html += `<div style="display: inline-block; margin-right: 40px; vertical-align: top;"><span style="font-size: 11px; color: #64748b; text-transform: uppercase;">Model</span><br><strong>${escapeHtml(job.model || '-')}</strong></div>`;
+    html += `<div style="display: inline-block; vertical-align: top;"><span style="font-size: 11px; color: #64748b; text-transform: uppercase;">Year</span><br><strong>${escapeHtml(job.year || '-')}</strong></div>`;
     html += `</div>`;
 
     if (job.summary) {
@@ -672,4 +683,17 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = String(text);
     return div.innerHTML;
+}
+
+function escapeForAttr(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 }

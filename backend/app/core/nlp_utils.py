@@ -1,4 +1,4 @@
-import numpy as np
+import math
 
 
 def chunk_transcript_by_time(transcript, chunk_size=60):
@@ -18,7 +18,7 @@ def chunk_transcript_by_time(transcript, chunk_size=60):
         return []
 
     max_time = max(ends)
-    num_chunks = int(np.ceil(max_time / chunk_size))
+    num_chunks = math.ceil(max_time / chunk_size)
     chunk_times = [i * chunk_size for i in range(1, num_chunks + 1)]
 
     chunks = []

@@ -1,10 +1,17 @@
-import os
-import json
 import base64
 import glob
-from typing import Dict, List, Optional, Tuple
+import json
+import logging
+import os
+from typing import Dict, List, Optional
 from dataclasses import dataclass, field
+
 from openai import OpenAI
+
+from ..exceptions import VisionAnalysisError
+from .retry import openai_retry
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -62,20 +69,19 @@ class VisionAnalyzer:
         model: str = "gpt-4o",
         max_frames: int = 10,
         prompt_path: Optional[str] = None,
+        client: Optional[OpenAI] = None,
     ):
         self.model = model
         self.max_frames = max_frames
         self.prompt_path = prompt_path
-        self._client = None
+        self._client = client
         self._prompt_template = None
 
     @property
     def client(self) -> OpenAI:
         if self._client is None:
-            api_key = os.environ.get("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError("OPENAI_API_KEY environment variable not set")
-            self._client = OpenAI(api_key=api_key)
+            from ..deps import get_openai_client
+            self._client = get_openai_client()
         return self._client
 
     @property
@@ -210,16 +216,17 @@ class VisionAnalyzer:
             resolved[category] = resolved_items
         return resolved
 
+    @openai_retry
     def analyze_frames(
         self, frames_dir: str, vehicle_info: Dict[str, str]
     ) -> ConditionResult:
         """Run the full vision analysis pipeline."""
         frames = self.select_frames(frames_dir)
-        print(f"Selected {len(frames)} frames for vision analysis")
+        logger.info("Selected %d frames for vision analysis", len(frames))
 
         messages = self.build_messages(frames, vehicle_info)
 
-        print(f"Sending {len(frames)} images to {self.model} for condition analysis...")
+        logger.info("Sending %d images to %s for condition analysis", len(frames), self.model)
         completion = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -234,7 +241,7 @@ class VisionAnalyzer:
             + completion.usage.completion_tokens * self.OUTPUT_COST_PER_TOKEN
         )
 
-        print(f"Vision analysis complete. Cost: ${cost:.4f}")
+        logger.info("Vision analysis complete. Cost: $%.4f", cost)
 
         parsed = self._parse_response(raw)
 

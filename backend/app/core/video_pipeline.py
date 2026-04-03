@@ -1,20 +1,29 @@
+import logging
 import os
 import subprocess
+from typing import Optional
+
 import cv2
 from pathlib import Path
 from datetime import timedelta
 from openai import OpenAI
+
+from ..exceptions import VideoProcessingError, TranscriptionError
 from .video_classes import WordTimestamp, SegmentTimestamp, TranscriptData, VideoProcessingResult
+from .retry import openai_retry
+
+logger = logging.getLogger(__name__)
 
 
 class VideoProcessingPipeline:
     def __init__(
         self,
-        output_dir="processed_videos",
-        model_size="medium",
-        extract_frames_interval=5,
-        subtitle_style="FontSize=24,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Shadow=0,Alignment=2",
-        use_openai_whisper=True
+        output_dir: str = "processed_videos",
+        model_size: str = "medium",
+        extract_frames_interval: int = 5,
+        subtitle_style: str = "FontSize=24,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Shadow=0,Alignment=2",
+        use_openai_whisper: bool = True,
+        client: Optional[OpenAI] = None,
     ):
         """
         Initialize the video processing pipeline
@@ -25,6 +34,7 @@ class VideoProcessingPipeline:
             extract_frames_interval: Interval in seconds for extracting frames
             subtitle_style: FFmpeg subtitle styling
             use_openai_whisper: If True, use OpenAI's Whisper API (more reliable)
+            client: Shared OpenAI client (falls back to deps.get_openai_client)
         """
         self.output_dir = output_dir
         self.model_size = model_size
@@ -32,7 +42,7 @@ class VideoProcessingPipeline:
         self.subtitle_style = subtitle_style
         self.use_openai_whisper = use_openai_whisper
         self.whisper_model = None
-        self.openai_client = None
+        self._client = client
 
         os.makedirs(output_dir, exist_ok=True)
         self.transcript_dir = os.path.join(output_dir, "transcripts")
@@ -45,14 +55,13 @@ class VideoProcessingPipeline:
         os.makedirs(self.captioned_dir, exist_ok=True)
         os.makedirs(self.audio_dir, exist_ok=True)
 
-    def _get_openai_client(self):
-        """Get OpenAI client for Whisper API"""
-        if self.openai_client is None:
-            api_key = os.environ.get("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError("OPENAI_API_KEY environment variable not set")
-            self.openai_client = OpenAI(api_key=api_key)
-        return self.openai_client
+    @property
+    def client(self) -> OpenAI:
+        """Shared OpenAI client for Whisper API."""
+        if self._client is None:
+            from ..deps import get_openai_client
+            self._client = get_openai_client()
+        return self._client
 
     def _load_model(self):
         """Lazy-load the local Whisper model when needed"""
@@ -61,7 +70,7 @@ class VideoProcessingPipeline:
             self.whisper_model = whisper.load_model(self.model_size)
         return self.whisper_model
 
-    def extract_audio(self, video_path, audio_path):
+    def extract_audio(self, video_path: str, audio_path: str) -> str:
         """Extract audio from video using ffmpeg"""
         os.makedirs(os.path.dirname(audio_path), exist_ok=True)
 
@@ -72,26 +81,29 @@ class VideoProcessingPipeline:
             "-c:a", "pcm_s16le", audio_path
         ]
 
-        print(f"Extracting audio from {video_path}...")
-        result = subprocess.run(command, capture_output=True, text=True)
-        
+        logger.info("Extracting audio from %s", video_path)
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=300)
+        except subprocess.TimeoutExpired:
+            raise VideoProcessingError(f"FFmpeg audio extraction timed out for {video_path}")
+
         if result.returncode != 0:
-            print(f"FFmpeg stderr: {result.stderr}")
-            raise ValueError(f"FFmpeg audio extraction failed: {result.stderr[:500]}")
+            logger.error("FFmpeg stderr: %s", result.stderr)
+            raise VideoProcessingError(f"FFmpeg audio extraction failed: {result.stderr[:500]}")
 
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Failed to create audio file at {audio_path}")
 
         # Validate the audio file has actual content
         file_size = os.path.getsize(audio_path)
-        print(f"Extracted audio file size: {file_size} bytes")
+        logger.info("Extracted audio file size: %d bytes", file_size)
         
         if file_size < 1000:  # Less than 1KB is likely empty/corrupt
-            raise ValueError(f"Audio extraction produced empty file ({file_size} bytes). Video may not have audio track.")
+            raise VideoProcessingError(f"Audio extraction produced empty file ({file_size} bytes). Video may not have audio track.")
 
         return audio_path
 
-    def transcribe_audio(self, audio_path):
+    def transcribe_audio(self, audio_path: str) -> TranscriptData:
         """Transcribe audio using Whisper (OpenAI API or local model)"""
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found at {audio_path}")
@@ -101,18 +113,19 @@ class VideoProcessingPipeline:
         else:
             return self._transcribe_with_local_whisper(audio_path)
 
-    def _transcribe_with_openai(self, audio_path):
+    @openai_retry
+    def _transcribe_with_openai(self, audio_path: str) -> TranscriptData:
         """Transcribe using OpenAI's Whisper API"""
-        print(f"Transcribing with OpenAI Whisper API: {audio_path}")
-        client = self._get_openai_client()
+        logger.info("Transcribing with OpenAI Whisper API: %s", audio_path)
+        client = self.client
 
         # Get file size to check if we need to handle large files
         file_size = os.path.getsize(audio_path)
-        print(f"Audio file size: {file_size / (1024*1024):.2f} MB")
+        logger.info("Audio file size: %.2f MB", file_size / (1024 * 1024))
 
         # OpenAI Whisper API limit is 25MB
         if file_size > 25 * 1024 * 1024:
-            print("Warning: Audio file is larger than 25MB, may need to chunk")
+            logger.warning("Audio file is larger than 25MB, may need to chunk")
 
         with open(audio_path, "rb") as audio_file:
             # Use verbose_json to get timestamps
@@ -155,12 +168,12 @@ class VideoProcessingPipeline:
             text=result.text if hasattr(result, 'text') else ""
         )
 
-        print(f"OpenAI Whisper transcription complete. Text length: {len(transcript.text)}")
+        logger.info("OpenAI Whisper transcription complete. Text length: %d", len(transcript.text))
         return transcript
 
-    def _transcribe_with_local_whisper(self, audio_path):
+    def _transcribe_with_local_whisper(self, audio_path: str) -> TranscriptData:
         """Transcribe using local Whisper model"""
-        print(f"Transcribing with local Whisper model: {audio_path}")
+        logger.info("Transcribing with local Whisper model: %s", audio_path)
         model = self._load_model()
         result = model.transcribe(audio_path, word_timestamps=True)
 
@@ -202,7 +215,7 @@ class VideoProcessingPipeline:
         hours, minutes = divmod(minutes, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{td.microseconds//1000:03d}"
 
-    def create_subtitle_file(self, transcript, output_srt_path):
+    def create_subtitle_file(self, transcript: TranscriptData, output_srt_path: str) -> str:
         """Create an SRT subtitle file with words appearing as they're spoken"""
         segments = transcript.segments
 
@@ -254,27 +267,31 @@ class VideoProcessingPipeline:
 
         return output_srt_path
 
-    def add_subtitles_to_video(self, video_path, subtitle_path, output_path):
+    def add_subtitles_to_video(self, video_path: str, subtitle_path: str, output_path: str) -> Optional[str]:
         """Add subtitles to video using FFmpeg"""
         if not os.path.exists(subtitle_path):
-            print(f"Warning: Subtitle file not found: {subtitle_path}")
+            logger.warning("Subtitle file not found: %s", subtitle_path)
             return None
 
+        escaped_path = subtitle_path.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
         command = [
             "ffmpeg", "-y", "-i", video_path,
-            "-vf", f"subtitles={subtitle_path}:force_style='{self.subtitle_style}'",
+            "-vf", f"subtitles='{escaped_path}':force_style='{self.subtitle_style}'",
             "-c:a", "copy", output_path
         ]
 
         try:
-            subprocess.run(command, check=True, capture_output=True)
+            subprocess.run(command, check=True, capture_output=True, timeout=300)
             return output_path
+        except subprocess.TimeoutExpired:
+            logger.warning("Subtitle burning timed out for %s", video_path)
+            return None
         except subprocess.CalledProcessError as e:
-            print(f"Warning: Failed to add subtitles to video: {e}")
-            print(f"Stderr: {e.stderr.decode() if e.stderr else 'N/A'}")
+            logger.warning("Failed to add subtitles to video: %s", e)
+            logger.debug("Stderr: %s", e.stderr.decode() if e.stderr else "N/A")
             return None
 
-    def save_transcript_formats(self, transcript, json_path, txt_path):
+    def save_transcript_formats(self, transcript: TranscriptData, json_path: str, txt_path: str) -> tuple[str, str]:
         """Save transcript in both JSON and human-readable formats"""
         with open(json_path, 'w', encoding='utf-8') as json_file:
             json_content = transcript.model_dump_json(indent=2)
@@ -297,13 +314,13 @@ class VideoProcessingPipeline:
 
         return json_path, txt_path
 
-    def extract_keyframes(self, video_path, output_dir):
+    def extract_keyframes(self, video_path: str, output_dir: str) -> tuple[str, float]:
         """Extract frames at regular intervals"""
         os.makedirs(output_dir, exist_ok=True)
 
         video = cv2.VideoCapture(video_path)
         if not video.isOpened():
-            raise ValueError(f"Could not open video file: {video_path}")
+            raise VideoProcessingError(f"Could not open video file: {video_path}")
 
         fps = video.get(cv2.CAP_PROP_FPS)
         frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -325,7 +342,7 @@ class VideoProcessingPipeline:
         video.release()
         return output_dir, duration
 
-    def process_video(self, video_path, progress_callback=None):
+    def process_video(self, video_path: str, progress_callback=None) -> VideoProcessingResult:
         """Process a video, create captioned version, save transcript and extract frames"""
         video_path = os.path.abspath(video_path)
 
@@ -341,35 +358,35 @@ class VideoProcessingPipeline:
 
         if progress_callback:
             progress_callback("extracting_audio", 10)
-        print(f"Extracting audio from {video_path}...")
+        logger.info("Extracting audio from %s", video_path)
         self.extract_audio(video_path, audio_path)
 
         if progress_callback:
             progress_callback("transcribing", 30)
-        print("Transcribing audio with word-level timestamps (this may take a while)...")
+        logger.info("Transcribing audio with word-level timestamps")
         transcript = self.transcribe_audio(audio_path)
 
         if progress_callback:
             progress_callback("saving_transcript", 60)
-        print("Saving transcript data...")
+        logger.info("Saving transcript data")
         self.save_transcript_formats(transcript, json_path, txt_path)
 
         if progress_callback:
             progress_callback("creating_subtitles", 70)
-        print("Creating subtitle file...")
+        logger.info("Creating subtitle file")
         self.create_subtitle_file(transcript, subtitle_path)
 
         if progress_callback:
             progress_callback("adding_subtitles", 80)
-        print(f"Adding subtitles to create captioned video...")
+        logger.info("Adding subtitles to create captioned video")
         captioned_result = self.add_subtitles_to_video(video_path, subtitle_path, captioned_video_path)
         if not captioned_result:
             captioned_video_path = None
-            print("Skipping captioned video (subtitle burning failed)")
+            logger.warning("Skipping captioned video (subtitle burning failed)")
 
         if progress_callback:
             progress_callback("extracting_frames", 90)
-        print(f"Extracting frames at {self.extract_frames_interval} second intervals...")
+        logger.info("Extracting frames at %d second intervals", self.extract_frames_interval)
         frames_dir, duration = self.extract_keyframes(video_path, video_frames_dir)
 
         result = VideoProcessingResult(
@@ -385,15 +402,12 @@ class VideoProcessingPipeline:
         if progress_callback:
             progress_callback("complete", 100)
 
-        print(f"Video processing complete. Results:")
-        print(f"- Captioned video: {captioned_video_path}")
-        print(f"- Transcript JSON: {json_path}")
-        print(f"- Transcript TXT: {txt_path}")
-        print(f"- Extracted frames: {video_frames_dir}")
+        logger.info("Video processing complete. Captioned=%s, Transcript=%s, Frames=%s",
+                    captioned_video_path, json_path, video_frames_dir)
 
         return result
 
-    def batch_process(self, video_paths):
+    def batch_process(self, video_paths: list[str]) -> list[VideoProcessingResult]:
         """Process multiple videos in batch"""
         results = []
         for video_path in video_paths:
@@ -401,5 +415,5 @@ class VideoProcessingPipeline:
                 result = self.process_video(video_path)
                 results.append(result)
             except Exception as e:
-                print(f"Error processing {video_path}: {e}")
+                logger.error("Error processing %s: %s", video_path, e)
         return results

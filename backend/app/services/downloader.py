@@ -2,7 +2,10 @@ import os
 import re
 from pathlib import Path
 from typing import Optional, Tuple
+
 import yt_dlp
+
+from ..exceptions import DownloadError
 
 
 class VideoDownloader:
@@ -74,9 +77,9 @@ class VideoDownloader:
                 return filename, title
 
         except yt_dlp.utils.DownloadError as e:
-            raise ValueError(f"Failed to download video: {str(e)}")
+            raise DownloadError(f"Failed to download video: {str(e)}") from e
         except Exception as e:
-            raise ValueError(f"Download error: {str(e)}")
+            raise DownloadError(f"Download error: {str(e)}") from e
 
     def is_youtube_url(self, url: str) -> bool:
         """Check if URL is a YouTube URL"""
@@ -94,7 +97,7 @@ class VideoDownloader:
             with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
                 ydl.extract_info(url, download=False)
                 return True
-        except:
+        except Exception:
             return False
 
 

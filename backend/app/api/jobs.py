@@ -8,23 +8,12 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models.db import Job, JobStatus, SourceType, get_engine, create_session_factory
+from ..deps import get_db
+from ..models.db import Job, JobStatus, SourceType
 from ..models.schemas import JobResponse, JobDetailResponse, JobListResponse, JobLogsResponse, LogEntry
 
 
 router = APIRouter()
-
-
-def get_db():
-    """Dependency to get database session"""
-    settings = get_settings()
-    engine = get_engine(settings.database_url)
-    SessionLocal = create_session_factory(engine)
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 @router.get("", response_model=JobListResponse)

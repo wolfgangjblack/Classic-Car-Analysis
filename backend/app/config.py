@@ -1,6 +1,8 @@
+import logging
 import os
 from pathlib import Path
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
@@ -10,9 +12,6 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
-
-    # Redis
-    redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
 
     # Database
     database_url: str = Field(
@@ -39,6 +38,9 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
     cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
+
+    # Logging
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     # Limits
     max_upload_size_mb: int = Field(default=500, alias="MAX_UPLOAD_SIZE_MB")
@@ -88,5 +90,16 @@ class Settings(BaseSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
-    """Get cached settings instance"""
+    """Get cached settings instance."""
     return Settings()
+
+
+def configure_logging() -> None:
+    """Set up root logging based on the LOG_LEVEL environment variable."""
+    settings = get_settings()
+    level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )

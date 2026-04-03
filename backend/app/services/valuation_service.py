@@ -1,18 +1,27 @@
+from typing import Optional
+
+from openai import OpenAI
+
 from ..config import get_settings
+from ..deps import get_openai_client
 from ..core.valuation import ValuationEngine, ValuationResult
 
 
 class ValuationService:
     """Service wrapper for market valuation and bid price calculation."""
 
-    def __init__(self):
+    def __init__(self, client: Optional[OpenAI] = None):
         self.settings = get_settings()
+        self._client = client
         self._engine = None
 
     @property
     def engine(self) -> ValuationEngine:
         if self._engine is None:
-            self._engine = ValuationEngine(model=self.settings.vision_model)
+            self._engine = ValuationEngine(
+                model=self.settings.vision_model,
+                client=self._client or get_openai_client(),
+            )
         return self._engine
 
     def evaluate(

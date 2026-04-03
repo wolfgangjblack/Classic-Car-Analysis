@@ -254,22 +254,60 @@ The system tracks API usage costs for each processed video. View costs via:
 
 ## Development
 
+### Setup
+
+```bash
+# Install the package in editable mode with dev dependencies
+make install-dev
+
+# Or manually:
+pip install -e ".[dev]"
+```
+
 ### Running Tests
 
 ```bash
-cd backend
-pytest
+make test
+
+# Or directly:
+cd backend && python -m pytest
 ```
 
-### Code Style
+### Linting & Formatting
 
 ```bash
-# Format code
-black backend/
+# Check for issues
+make lint
 
-# Type checking
-mypy backend/
+# Auto-format
+make format
 ```
+
+### Optional: Local Whisper
+
+By default, the pipeline uses OpenAI's Whisper API for transcription. To use a local Whisper model instead (requires ~8GB for PyTorch):
+
+```bash
+pip install -e ".[local-whisper]"
+```
+
+### Docker
+
+```bash
+make docker-up    # Build and start all services
+make docker-down  # Stop all services
+```
+
+## Production Considerations
+
+This project is a **proof-of-concept** demonstrating a multi-modal AI analysis pipeline. The following concerns are intentionally deferred to the consumer application once implementation is properly scoped:
+
+- **Authentication and authorization** -- to be handled by the consumer app or API gateway based on deployment requirements
+- **Rate limiting** -- applied at the API gateway or consumer app layer to match traffic patterns
+- **Database** -- SQLite is used for simplicity; a production deployment would migrate to PostgreSQL for concurrent write support
+- **Task queue** -- FastAPI BackgroundTasks are used for processing; a production system would use Celery or RQ with Redis for crash recovery and horizontal scaling
+- **CI/CD** -- GitHub Actions for lint, test, and Docker image builds would be added for team workflows
+- **Observability** -- structured JSON logging, OpenTelemetry tracing, and Prometheus metrics for production monitoring
 
 ## Future Development
 

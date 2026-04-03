@@ -3,13 +3,14 @@
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.models.db import Base, Job, JobStatus, SourceType
 from app.core.vision_analyzer import ConditionResult
@@ -18,7 +19,11 @@ from app.core.valuation import ValuationResult
 
 @pytest.fixture
 def pipeline_db():
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(bind=engine)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -41,7 +46,7 @@ def pipeline_job(pipeline_db):
         model="Thunderbird",
         year="1956",
         cost=0.002,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     pipeline_db.add(job)
     pipeline_db.commit()
@@ -50,9 +55,8 @@ def pipeline_job(pipeline_db):
 
 
 def _mock_condition_result(tmp_path):
-    """Create a ConditionResult with real temp frame files."""
     frames_dir = tmp_path / "frames"
-    frames_dir.mkdir()
+    frames_dir.mkdir(exist_ok=True)
     frame_paths = []
     for i in range(3):
         p = frames_dir / f"frame_{i:03d}.jpg"
@@ -96,14 +100,12 @@ def _mock_valuation_result():
     )
 
 
-def test_vision_and_valuation_happy_path(pipeline_db, pipeline_job, tmp_path):
-    condition = _mock_condition_result(tmp_path)
-    valuation = _mock_valuation_result()
-    vehicle_info = {"make": "Ford", "model": "Thunderbird", "year": "1956"}
+def _run_with_patches(pipeline_db, job_id, frames_dir, vehicle_info, cost, condition, valuation=None, valuation_error=None, tmp_path=None):
+    """Helper that patches all external deps and runs _run_vision_and_valuation."""
+    from app.workers.tasks import _run_vision_and_valuation
 
-    evidence_dir = tmp_path / "evidence"
     mock_settings = MagicMock()
-    mock_settings.evidence_dir = evidence_dir
+    mock_settings.evidence_dir = (tmp_path or Path("/tmp")) / "evidence"
 
     with patch("app.workers.tasks.get_db_session", return_value=pipeline_db), \
          patch("app.workers.tasks.VisionService") as mock_vs, \
@@ -111,67 +113,63 @@ def test_vision_and_valuation_happy_path(pipeline_db, pipeline_job, tmp_path):
          patch("app.workers.tasks.get_settings", return_value=mock_settings):
 
         mock_vs.return_value.analyze_vehicle_condition.return_value = condition
-        mock_vals.return_value.evaluate.return_value = valuation
+        if valuation_error:
+            mock_vals.return_value.evaluate.side_effect = valuation_error
+        elif valuation:
+            mock_vals.return_value.evaluate.return_value = valuation
 
-        from app.workers.tasks import _run_vision_and_valuation
-        cr_json, score, val_result, cost = _run_vision_and_valuation(
-            pipeline_job.id, str(tmp_path / "frames"), vehicle_info, 0.002
-        )
+        result = _run_vision_and_valuation(job_id, frames_dir, vehicle_info, cost)
+        return result, mock_vals
 
-    pipeline_db.refresh(pipeline_job)
-    assert pipeline_job.condition_score == 4.2
-    assert pipeline_job.condition_report is not None
-    report = json.loads(pipeline_job.condition_report)
+
+def test_vision_and_valuation_happy_path(pipeline_db, pipeline_job, tmp_path):
+    condition = _mock_condition_result(tmp_path)
+    valuation = _mock_valuation_result()
+    vehicle_info = {"make": "Ford", "model": "Thunderbird", "year": "1956"}
+    job_id = pipeline_job.id
+
+    (cr_json, score, val_result, cost), _ = _run_with_patches(
+        pipeline_db, job_id, str(tmp_path / "frames"), vehicle_info, 0.002,
+        condition, valuation=valuation, tmp_path=tmp_path,
+    )
+
+    pipeline_db.expire_all()
+    job = pipeline_db.query(Job).filter(Job.id == job_id).first()
+    assert job.condition_score == 4.2
+    assert job.condition_report is not None
+    report = json.loads(job.condition_report)
     assert report["overall_score"] == 4.2
-    assert pipeline_job.market_value_low == 30000
-    assert pipeline_job.bid_range_high == 48000
+    assert job.market_value_low == 30000
+    assert job.bid_range_high == 48000
     assert cost == pytest.approx(0.002 + 0.08 + 0.03)
 
 
 def test_valuation_failure_non_fatal(pipeline_db, pipeline_job, tmp_path):
     condition = _mock_condition_result(tmp_path)
     vehicle_info = {"make": "Ford", "model": "Thunderbird", "year": "1956"}
+    job_id = pipeline_job.id
 
-    mock_settings = MagicMock()
-    mock_settings.evidence_dir = tmp_path / "evidence"
+    (cr_json, score, val_result, cost), _ = _run_with_patches(
+        pipeline_db, job_id, str(tmp_path / "frames"), vehicle_info, 0.002,
+        condition, valuation_error=RuntimeError("API unavailable"), tmp_path=tmp_path,
+    )
 
-    with patch("app.workers.tasks.get_db_session", return_value=pipeline_db), \
-         patch("app.workers.tasks.VisionService") as mock_vs, \
-         patch("app.workers.tasks.ValuationService") as mock_vals, \
-         patch("app.workers.tasks.get_settings", return_value=mock_settings):
-
-        mock_vs.return_value.analyze_vehicle_condition.return_value = condition
-        mock_vals.return_value.evaluate.side_effect = RuntimeError("API unavailable")
-
-        from app.workers.tasks import _run_vision_and_valuation
-        cr_json, score, val_result, cost = _run_vision_and_valuation(
-            pipeline_job.id, str(tmp_path / "frames"), vehicle_info, 0.002
-        )
-
-    pipeline_db.refresh(pipeline_job)
-    assert pipeline_job.condition_score == 4.2
-    assert pipeline_job.market_value_low is None
+    pipeline_db.expire_all()
+    job = pipeline_db.query(Job).filter(Job.id == job_id).first()
+    assert job.condition_score == 4.2
+    assert job.market_value_low is None
     assert val_result is None
 
 
 def test_valuation_skipped_no_make(pipeline_db, pipeline_job, tmp_path):
     condition = _mock_condition_result(tmp_path)
     vehicle_info = {"make": "", "model": "", "year": "1956"}
+    job_id = pipeline_job.id
 
-    mock_settings = MagicMock()
-    mock_settings.evidence_dir = tmp_path / "evidence"
-
-    with patch("app.workers.tasks.get_db_session", return_value=pipeline_db), \
-         patch("app.workers.tasks.VisionService") as mock_vs, \
-         patch("app.workers.tasks.ValuationService") as mock_vals, \
-         patch("app.workers.tasks.get_settings", return_value=mock_settings):
-
-        mock_vs.return_value.analyze_vehicle_condition.return_value = condition
-
-        from app.workers.tasks import _run_vision_and_valuation
-        cr_json, score, val_result, cost = _run_vision_and_valuation(
-            pipeline_job.id, str(tmp_path / "frames"), vehicle_info, 0.002
-        )
+    (cr_json, score, val_result, cost), mock_vals = _run_with_patches(
+        pipeline_db, job_id, str(tmp_path / "frames"), vehicle_info, 0.002,
+        condition, tmp_path=tmp_path,
+    )
 
     mock_vals.return_value.evaluate.assert_not_called()
     assert val_result is None
@@ -180,51 +178,31 @@ def test_valuation_skipped_no_make(pipeline_db, pipeline_job, tmp_path):
 def test_evidence_frames_copied(pipeline_db, pipeline_job, tmp_path):
     condition = _mock_condition_result(tmp_path)
     vehicle_info = {"make": "Ford", "model": "Thunderbird", "year": "1956"}
+    job_id = pipeline_job.id
 
-    evidence_dir = tmp_path / "evidence"
-    mock_settings = MagicMock()
-    mock_settings.evidence_dir = evidence_dir
+    _run_with_patches(
+        pipeline_db, job_id, str(tmp_path / "frames"), vehicle_info, 0.002,
+        condition, valuation=_mock_valuation_result(), tmp_path=tmp_path,
+    )
 
-    with patch("app.workers.tasks.get_db_session", return_value=pipeline_db), \
-         patch("app.workers.tasks.VisionService") as mock_vs, \
-         patch("app.workers.tasks.ValuationService") as mock_vals, \
-         patch("app.workers.tasks.get_settings", return_value=mock_settings):
-
-        mock_vs.return_value.analyze_vehicle_condition.return_value = condition
-        mock_vals.return_value.evaluate.return_value = _mock_valuation_result()
-
-        from app.workers.tasks import _run_vision_and_valuation
-        _run_vision_and_valuation(
-            pipeline_job.id, str(tmp_path / "frames"), vehicle_info, 0.002
-        )
-
-    job_evidence_dir = evidence_dir / pipeline_job.id
-    assert job_evidence_dir.exists()
-    evidence_files = list(job_evidence_dir.glob("evidence_*.jpg"))
+    evidence_dir = tmp_path / "evidence" / job_id
+    assert evidence_dir.exists()
+    evidence_files = list(evidence_dir.glob("evidence_*.jpg"))
     assert len(evidence_files) >= 1
 
 
 def test_vision_summary_appended(pipeline_db, pipeline_job, tmp_path):
     condition = _mock_condition_result(tmp_path)
     vehicle_info = {"make": "Ford", "model": "Thunderbird", "year": "1956"}
+    job_id = pipeline_job.id
 
-    mock_settings = MagicMock()
-    mock_settings.evidence_dir = tmp_path / "evidence"
+    _run_with_patches(
+        pipeline_db, job_id, str(tmp_path / "frames"), vehicle_info, 0.002,
+        condition, valuation=_mock_valuation_result(), tmp_path=tmp_path,
+    )
 
-    with patch("app.workers.tasks.get_db_session", return_value=pipeline_db), \
-         patch("app.workers.tasks.VisionService") as mock_vs, \
-         patch("app.workers.tasks.ValuationService") as mock_vals, \
-         patch("app.workers.tasks.get_settings", return_value=mock_settings):
-
-        mock_vs.return_value.analyze_vehicle_condition.return_value = condition
-        mock_vals.return_value.evaluate.return_value = _mock_valuation_result()
-
-        from app.workers.tasks import _run_vision_and_valuation
-        _run_vision_and_valuation(
-            pipeline_job.id, str(tmp_path / "frames"), vehicle_info, 0.002
-        )
-
-    pipeline_db.refresh(pipeline_job)
-    assert "Visual Condition Assessment" in pipeline_job.summary
-    assert "4.2" in pipeline_job.summary
-    assert "Paint looks great" in pipeline_job.summary
+    pipeline_db.expire_all()
+    job = pipeline_db.query(Job).filter(Job.id == job_id).first()
+    assert "Visual Condition Assessment" in job.summary
+    assert "4.2" in job.summary
+    assert "Paint looks great" in job.summary

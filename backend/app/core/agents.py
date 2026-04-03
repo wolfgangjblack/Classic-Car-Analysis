@@ -1,53 +1,68 @@
 import os
 import json
-from openai import OpenAI
+import logging
+import threading
 import concurrent.futures
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List
+
+from openai import OpenAI
 from tqdm import tqdm
+
 from .nlp_utils import chunk_transcript_by_time
+from .retry import openai_retry
 
-
-def get_openai_client():
-    """Get OpenAI client with API key from environment"""
-    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_KEY")
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY environment variable not set")
-    return OpenAI(api_key=api_key)
+logger = logging.getLogger(__name__)
 
 
 class Agent(ABC):
     def __init__(
-        self, system_prompt: str, llm: str = "gpt-3.5-turbo", temperature: float = 0.0
+        self,
+        system_prompt: str,
+        llm: str = "gpt-4o-mini",
+        temperature: float = 0.0,
+        client: Optional[OpenAI] = None,
     ):
         self.system_prompt = system_prompt
         self.token_cost = 0.0
         self.temperature = temperature
         self.llm = llm
+        self._client = client
+
+    @property
+    def client(self) -> OpenAI:
+        if self._client is None:
+            from ..deps import get_openai_client
+            self._client = get_openai_client()
+        return self._client
 
     @abstractmethod
     def __call__(self, *args, **kwargs) -> Any:
-        """Execute the agent's primary function"""
+        """Execute the agent's primary function."""
         pass
 
     def describe(self) -> str:
-        return f"{self.__class__.__name__}\n llm: {self.llm} -Note: Only GPT support atm \n Agentic Prompt:{self.system_prompt}\n"
+        return (
+            f"{self.__class__.__name__}\n"
+            f"  LLM: {self.llm}\n"
+            f"  Prompt: {self.system_prompt[:120]}...\n"
+        )
 
     def get_cost(self):
         return self.token_cost
 
-    @staticmethod
-    def gpt_jsonic(
+    @openai_retry
+    def _call_openai_json(
+        self,
         messages,
         max_tokens=400,
         temperature=0.3,
-        input_cost=0.5 / 1e6,
-        output_cost=1.5 / 1e6,
+        input_cost=0.15 / 1e6,
+        output_cost=0.60 / 1e6,
     ):
-        """Calls the OpenAI Chat Completion API with the provided messages."""
-        client = get_openai_client()
-        completion = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+        """Call the OpenAI Chat Completion API requesting JSON output."""
+        completion = self.client.chat.completions.create(
+            model=self.llm,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -60,18 +75,18 @@ class Agent(ABC):
         )
         return completion.choices[0].message.content.strip(), cost
 
-    @staticmethod
-    def chat_with_gpt(
+    @openai_retry
+    def _call_openai_chat(
+        self,
         messages,
         max_tokens=400,
         temperature=0.3,
-        input_cost=0.5 / 1e6,
-        output_cost=1.5 / 1e6,
+        input_cost=0.15 / 1e6,
+        output_cost=0.60 / 1e6,
     ):
-        """Calls the OpenAI Chat Completion API with the provided messages."""
-        client = get_openai_client()
-        completion = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+        """Call the OpenAI Chat Completion API."""
+        completion = self.client.chat.completions.create(
+            model=self.llm,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -87,14 +102,16 @@ class Agent(ABC):
 class JsonicAgent(Agent):
     def __init__(
         self,
-        system_prompt: str = None,
+        system_prompt: Optional[str] = None,
         name: Optional[str] = None,
-        data: Optional[Dict] = None
+        data: Optional[Dict] = None,
+        client: Optional[OpenAI] = None,
     ):
-        super().__init__(system_prompt=system_prompt)
+        super().__init__(system_prompt=system_prompt, client=client)
         self.name = name
         self.data = data or {}
         self.token_cost = 0
+        self._lock = threading.Lock()
 
     def __call__(self, text):
         messages = [
@@ -102,19 +119,21 @@ class JsonicAgent(Agent):
             {"role": "user", "content": text},
         ]
 
-        response, cost = self.gpt_jsonic(messages, temperature=self.temperature)
+        response, cost = self._call_openai_json(messages, temperature=self.temperature)
         try:
             response = json.loads(response)
-        except Exception as e:
-            return e
+        except json.JSONDecodeError:
+            logger.error("Failed to parse JSON from agent %s: %s", self.name, response[:200])
+            return {}
 
-        for k, v in response.items():
-            if v is not None:
-                if k in self.data and self.data[k] is not None:
-                    self.data[k].append(v)
-                else:
-                    self.data[k] = [v]
-        self.token_cost += cost
+        with self._lock:
+            for k, v in response.items():
+                if v is not None:
+                    if k in self.data and self.data[k] is not None:
+                        self.data[k].append(v)
+                    else:
+                        self.data[k] = [v]
+            self.token_cost += cost
 
         return response
 
@@ -122,11 +141,12 @@ class JsonicAgent(Agent):
 class ChatAgent(Agent):
     def __init__(
         self,
-        system_prompt: str = None,
+        system_prompt: Optional[str] = None,
         name: Optional[str] = None,
-        data: Optional[Dict] = None
+        data: Optional[Dict] = None,
+        client: Optional[OpenAI] = None,
     ):
-        super().__init__(system_prompt=system_prompt)
+        super().__init__(system_prompt=system_prompt, client=client)
         self.name = name
         self.data = data or {}
         self.token_cost = 0
@@ -137,23 +157,25 @@ class ChatAgent(Agent):
             {"role": "user", "content": text},
         ]
 
-        response, cost = self.chat_with_gpt(messages, temperature=self.temperature)
+        response, cost = self._call_openai_chat(messages, temperature=self.temperature)
         self.token_cost += cost
         return response
 
 
 class AgentPipeline:
-    def __init__(self, agents_dir: Optional[str] = None):
+    def __init__(self, agents_dir: Optional[str] = None, client: Optional[OpenAI] = None):
         """
         Initialize the AgentPipeline with processing and summarizing agents.
 
         Args:
             agents_dir: Directory containing agent prompt files
+            client: Shared OpenAI client (falls back to deps.get_openai_client)
         """
         self.agents = {'processing': [], 'summarizing': []}
         self.data = {}
         self.summaries = {}
         self.total_cost = 0.0
+        self._client = client
 
         if agents_dir and os.path.exists(agents_dir):
             self._load_agents_from_directory(agents_dir)
@@ -179,15 +201,15 @@ class AgentPipeline:
 
             if 'summary' in filename.lower():
                 self.agents['summarizing'].append(
-                    ChatAgent(name=agent_name, system_prompt=prompt)
+                    ChatAgent(name=agent_name, system_prompt=prompt, client=self._client)
                 )
             else:
                 self.agents['processing'].append(
-                    JsonicAgent(name=agent_name, system_prompt=prompt)
+                    JsonicAgent(name=agent_name, system_prompt=prompt, client=self._client)
                 )
 
-        print(f"Loaded {len(self.agents['processing'])} processing agents and "
-              f"{len(self.agents['summarizing'])} summarizing agents")
+        logger.info("Loaded %d processing agents and %d summarizing agents",
+                    len(self.agents['processing']), len(self.agents['summarizing']))
 
     def add_agent(self, agent, agent_type='processing'):
         """
@@ -206,7 +228,7 @@ class AgentPipeline:
         self,
         transcript_path: str,
         parallel: bool = True,
-        verbose: bool = True,
+        return_results: bool = True,
         progress_callback=None
     ):
         """
@@ -215,11 +237,11 @@ class AgentPipeline:
         Args:
             transcript_path: Path to the transcript file
             parallel: Whether to process chunks in parallel
-            verbose: Whether to return the processed data
+            return_results: Whether to return the processed data dict
             progress_callback: Optional callback for progress updates
 
         Returns:
-            Dictionary containing processing results and summary if verbose=True
+            Dictionary containing processing results and summary if return_results=True
         """
         transcript_name = os.path.basename(transcript_path)
 
@@ -227,10 +249,10 @@ class AgentPipeline:
             with open(transcript_path, 'r') as f:
                 transcript = json.load(f)
         except json.JSONDecodeError:
-            print(f"Error: Could not parse JSON from {transcript_path}")
+            logger.error("Could not parse JSON from %s", transcript_path)
             return None
         except FileNotFoundError:
-            print(f"Error: File not found: {transcript_path}")
+            logger.error("File not found: %s", transcript_path)
             return None
 
         chunks = chunk_transcript_by_time(transcript)
@@ -293,12 +315,12 @@ class AgentPipeline:
         if progress_callback:
             progress_callback("complete", 100)
 
-        if verbose:
+        if return_results:
             return self.data[transcript_name]
 
     def _parallel_process_chunks(self, transcript_name: str, chunks: List[str]):
         """Process chunks in parallel using ThreadPoolExecutor"""
-        print(f"Processing {len(chunks)} chunks in parallel for {transcript_name}...")
+        logger.info("Processing %d chunks in parallel for %s", len(chunks), transcript_name)
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = []
@@ -315,10 +337,10 @@ class AgentPipeline:
 
     def _sequential_process_chunks(self, transcript_name: str, chunks: List[str]):
         """Process chunks sequentially"""
-        print(f"Processing {len(chunks)} chunks sequentially for {transcript_name}...")
+        logger.info("Processing %d chunks sequentially for %s", len(chunks), transcript_name)
 
         for i, chunk in enumerate(chunks):
-            print(f"Processing chunk {i+1}/{len(chunks)}")
+            logger.debug("Processing chunk %d/%d", i + 1, len(chunks))
             for agent in self.agents['processing']:
                 agent(chunk)
 
@@ -350,7 +372,7 @@ class AgentPipeline:
         transcript_paths: List[str],
         parallel_transcripts: bool = False,
         parallel_chunks: bool = True,
-        verbose: bool = True
+        return_results: bool = True
     ):
         """
         Process multiple transcripts through the pipeline.
@@ -359,13 +381,13 @@ class AgentPipeline:
             transcript_paths: List of paths to transcript files
             parallel_transcripts: Whether to process transcripts in parallel
             parallel_chunks: Whether to process chunks within a transcript in parallel
-            verbose: Whether to print progress information
+            return_results: Whether to return the processed data dict
 
         Returns:
-            Dict of all processed data
+            Dict of all processed data if return_results=True
         """
         if parallel_transcripts and len(transcript_paths) > 1:
-            print("Warning: Parallel processing of transcripts is not yet supported.")
+            logger.warning("Parallel processing of transcripts is experimental")
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 futures = {
                     executor.submit(self.process_transcript, path, parallel_chunks, False): path
@@ -380,20 +402,20 @@ class AgentPipeline:
                     transcript_path = futures[future]
                     try:
                         future.result()
-                        if verbose:
-                            print(f"Completed processing {os.path.basename(transcript_path)}")
+                        if return_results:
+                            logger.info("Completed processing %s", os.path.basename(transcript_path))
                     except Exception as e:
-                        print(f"Error processing transcript {transcript_path}: {e}")
+                        logger.error("Error processing transcript %s: %s", transcript_path, e)
         else:
             for path in tqdm(transcript_paths, desc="Processing transcripts"):
                 try:
                     self.process_transcript(path, parallel_chunks, False)
-                    if verbose:
-                        print(f"Completed processing {os.path.basename(path)}")
+                    if return_results:
+                        logger.info("Completed processing %s", os.path.basename(path))
                 except Exception as e:
-                    print(f"Error processing transcript {path}: {e}")
+                    logger.error("Error processing transcript %s: %s", path, e)
 
-        if verbose:
+        if return_results:
             return self.data
 
     def get_summaries(self) -> Dict[str, str]:
@@ -430,7 +452,7 @@ class AgentPipeline:
             return output_path
 
         if parallel and len(self.summaries) > 1:
-            print(f"Saving {len(self.summaries)} summaries in parallel...")
+            logger.info("Saving %d summaries in parallel", len(self.summaries))
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 futures = {
                     executor.submit(save_single_summary, transcript_name, summary): transcript_name
@@ -448,17 +470,17 @@ class AgentPipeline:
                         saved_path = future.result()
                         saved_paths.append(saved_path)
                     except Exception as e:
-                        print(f"Error saving summary for {transcript_name}: {e}")
+                        logger.error("Error saving summary for %s: %s", transcript_name, e)
 
-                print(f"Saved {len(saved_paths)} summaries to {output_dir}")
+                logger.info("Saved %d summaries to %s", len(saved_paths), output_dir)
         else:
-            print(f"Saving {len(self.summaries)} summaries sequentially...")
+            logger.info("Saving %d summaries sequentially", len(self.summaries))
             saved_paths = []
             for transcript_name, summary in tqdm(self.summaries.items(), desc="Saving summaries"):
                 try:
                     saved_path = save_single_summary(transcript_name, summary)
                     saved_paths.append(saved_path)
                 except Exception as e:
-                    print(f"Error saving summary for {transcript_name}: {e}")
+                    logger.error("Error saving summary for %s: %s", transcript_name, e)
 
-            print(f"Saved {len(saved_paths)} summaries to {output_dir}")
+            logger.info("Saved %d summaries to %s", len(saved_paths), output_dir)

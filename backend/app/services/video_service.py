@@ -1,16 +1,19 @@
-import os
 from pathlib import Path
 from typing import Optional, Callable
 
+from openai import OpenAI
+
 from ..config import get_settings
+from ..deps import get_openai_client
 from ..core.video_pipeline import VideoProcessingPipeline
 
 
 class VideoService:
     """Service wrapper for video processing pipeline"""
 
-    def __init__(self):
+    def __init__(self, client: Optional[OpenAI] = None):
         self.settings = get_settings()
+        self._client = client
         self._pipeline = None
 
     @property
@@ -21,7 +24,8 @@ class VideoService:
                 output_dir=str(self.settings.processed_dir),
                 model_size=self.settings.whisper_model_size,
                 extract_frames_interval=self.settings.frame_extract_interval,
-                use_openai_whisper=True  # Use OpenAI's Whisper API for better reliability
+                use_openai_whisper=True,
+                client=self._client or get_openai_client(),
             )
         return self._pipeline
 

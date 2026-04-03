@@ -14,7 +14,7 @@ Example output:
 {
   "make": "Ford",
   "model": "Mustang",
-  "year": "1967"
+  "year": "1967",
   "package": "Shelby GT500"
 }
 

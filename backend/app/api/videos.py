@@ -1,28 +1,17 @@
 import os
 import uuid
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models.db import Job, JobStatus, SourceType, get_engine, create_session_factory
+from ..deps import get_db
+from ..models.db import Job, JobStatus, SourceType
 from ..models.schemas import URLSubmission, JobResponse
 
 
 router = APIRouter()
-
-
-def get_db():
-    """Dependency to get database session"""
-    settings = get_settings()
-    engine = get_engine(settings.database_url)
-    SessionLocal = create_session_factory(engine)
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 @router.post("/upload", response_model=JobResponse)
@@ -61,7 +50,7 @@ async def upload_video(
         original_filename=file.filename,
         status=JobStatus.PENDING.value,
         progress=0,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     db.add(job)
     db.commit()
@@ -105,7 +94,7 @@ async def submit_url(
         original_filename=url,
         status=JobStatus.PENDING.value,
         progress=0,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     db.add(job)
     db.commit()

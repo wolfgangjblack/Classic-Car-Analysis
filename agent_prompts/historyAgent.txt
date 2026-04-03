@@ -16,7 +16,7 @@ Example output:
 {
   "mileage": "50,000",
   "owners": "3",
-  "accident_history": None,
+  "accident_history": null,
   "maintenance": "Regular service every 5000 miles"
 }
 

@@ -1,26 +1,22 @@
-import os
 import json
+import logging
+import os
 import shutil
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import get_settings
-from ..models.db import Job, JobStatus, get_engine, create_session_factory
+from ..deps import get_db_session
+from ..models.db import Job, JobStatus
 from ..services.downloader import VideoDownloader
 from ..services.video_service import VideoService
 from ..services.agent_service import AgentService
 from ..services.vision_service import VisionService
 from ..services.valuation_service import ValuationService
 
-
-def get_db_session():
-    """Get a new database session"""
-    settings = get_settings()
-    engine = get_engine(settings.database_url)
-    SessionLocal = create_session_factory(engine)
-    return SessionLocal()
+logger = logging.getLogger(__name__)
 
 
 def add_log_entry(job_id: str, phase: str, status: str, message: str, duration_ms: int = None, details: dict = None):
@@ -31,7 +27,7 @@ def add_log_entry(job_id: str, phase: str, status: str, message: str, duration_m
         if job:
             logs = json.loads(job.logs) if job.logs else []
             entry = {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "phase": phase,
                 "status": status,
                 "message": message,
@@ -61,9 +57,9 @@ def update_job_status(job_id: str, status: str, progress: int = None, current_st
             if error is not None:
                 job.error = error
             if status == JobStatus.PROCESSING_VIDEO.value and job.started_at is None:
-                job.started_at = datetime.utcnow()
+                job.started_at = datetime.now(timezone.utc)
             if status in [JobStatus.COMPLETE.value, JobStatus.FAILED.value]:
-                job.completed_at = datetime.utcnow()
+                job.completed_at = datetime.now(timezone.utc)
             db.commit()
     finally:
         db.close()
@@ -191,7 +187,7 @@ def _run_vision_and_valuation(job_id, frames_dir, vehicle_info, current_cost):
                     shutil.copy2(src_path, str(dest_path))
                     copied[idx] = dest_name
                 except Exception as e:
-                    print(f"Failed to copy evidence frame {src_path}: {e}")
+                    logger.warning("Failed to copy evidence frame %s: %s", src_path, e)
 
             for category in ("good", "bad"):
                 for obs in condition.observations.get(category, []):
@@ -286,7 +282,7 @@ def _run_vision_and_valuation(job_id, frames_dir, vehicle_info, current_cost):
                 f"Market valuation failed (non-fatal): {str(e)}",
                 details={"error_type": type(e).__name__, "traceback": traceback.format_exc()},
             )
-            print(f"Valuation failed (non-fatal): {e}")
+            logger.warning("Valuation failed (non-fatal): %s", e)
     else:
         add_log_entry(
             job_id, "valuation", "warning",
@@ -296,27 +292,17 @@ def _run_vision_and_valuation(job_id, frames_dir, vehicle_info, current_cost):
     return condition_report_json, condition_score, valuation_result, cost
 
 
-def process_video_task(job_id: str):
-    """Background task to process an uploaded video."""
-    settings = get_settings()
+def _run_pipeline(job_id: str, video_path: str, progress_base: int = 5, progress_scale: float = 0.45):
+    """
+    Shared pipeline: video processing -> transcript analysis -> vision -> valuation.
+    Called by both process_video_task and process_url_task after the video file is available.
+    """
     total_start = time.time()
 
-    db = get_db_session()
     try:
-        job = db.query(Job).filter(Job.id == job_id).first()
-        if not job:
-            return
-        video_path = job.source_path
-        add_log_entry(job_id, "init", "info", f"Starting processing for uploaded video", 
-                     details={"video_path": video_path})
-    finally:
-        db.close()
-
-    try:
-        update_job_status(job_id, JobStatus.PROCESSING_VIDEO.value, 5, "Starting video processing")
+        update_job_status(job_id, JobStatus.PROCESSING_VIDEO.value, progress_base, "Starting video processing")
 
         video_service = VideoService()
-        phase_times = {}
 
         def video_progress(step, progress):
             status_map = {
@@ -330,7 +316,7 @@ def process_video_task(job_id: str):
             }
             if step in status_map:
                 status, desc = status_map[step]
-                scaled_progress = int(5 + (progress * 0.45))
+                scaled_progress = int(progress_base + (progress * progress_scale))
                 update_job_status(job_id, status, scaled_progress, desc)
 
         with PhaseTimer(job_id, "video_processing", "Video processing pipeline") as timer:
@@ -342,7 +328,6 @@ def process_video_task(job_id: str):
             timer.add_detail("duration_seconds", result.duration_seconds)
             timer.add_detail("frames_dir", frames_dir)
 
-        transcript_text = ""
         try:
             with open(transcript_path, 'r') as f:
                 transcript_data = json.load(f)
@@ -420,10 +405,25 @@ def process_video_task(job_id: str):
         raise
 
 
+def process_video_task(job_id: str):
+    """Background task to process an uploaded video."""
+    db = get_db_session()
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            return
+        video_path = job.source_path
+        add_log_entry(job_id, "init", "info", "Starting processing for uploaded video",
+                     details={"video_path": video_path})
+    finally:
+        db.close()
+
+    _run_pipeline(job_id, video_path, progress_base=5, progress_scale=0.45)
+
+
 def process_url_task(job_id: str):
     """Background task to process a video URL."""
     settings = get_settings()
-    total_start = time.time()
 
     db = get_db_session()
     try:
@@ -431,139 +431,35 @@ def process_url_task(job_id: str):
         if not job:
             return
         url = job.source_path
-        add_log_entry(job_id, "init", "info", f"Starting processing for URL",
+        add_log_entry(job_id, "init", "info", "Starting processing for URL",
                      details={"url": url})
     finally:
         db.close()
 
+    update_job_status(job_id, JobStatus.DOWNLOADING.value, 2, "Downloading video")
+
+    with PhaseTimer(job_id, "download", "Video download") as timer:
+        downloader = VideoDownloader(str(settings.videos_dir))
+
+        def download_progress(step, progress):
+            if step == "downloading":
+                scaled = int(2 + (progress * 0.08))
+                update_job_status(job_id, JobStatus.DOWNLOADING.value, scaled, f"Downloading: {progress}%")
+            elif step == "download_complete":
+                update_job_status(job_id, JobStatus.DOWNLOADING.value, 10, "Download complete")
+
+        video_path, title = downloader.download(url, job_id, download_progress)
+        timer.add_detail("video_path", video_path)
+        timer.add_detail("title", title)
+
+    db = get_db_session()
     try:
-        update_job_status(job_id, JobStatus.DOWNLOADING.value, 2, "Downloading video")
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if job:
+            job.source_path = video_path
+            job.original_filename = title
+            db.commit()
+    finally:
+        db.close()
 
-        with PhaseTimer(job_id, "download", "Video download") as timer:
-            downloader = VideoDownloader(str(settings.videos_dir))
-
-            def download_progress(step, progress):
-                if step == "downloading":
-                    scaled = int(2 + (progress * 0.08))
-                    update_job_status(job_id, JobStatus.DOWNLOADING.value, scaled, f"Downloading: {progress}%")
-                elif step == "download_complete":
-                    update_job_status(job_id, JobStatus.DOWNLOADING.value, 10, "Download complete")
-
-            video_path, title = downloader.download(url, job_id, download_progress)
-            timer.add_detail("video_path", video_path)
-            timer.add_detail("title", title)
-
-        db = get_db_session()
-        try:
-            job = db.query(Job).filter(Job.id == job_id).first()
-            if job:
-                job.source_path = video_path
-                job.original_filename = title
-                db.commit()
-        finally:
-            db.close()
-
-        update_job_status(job_id, JobStatus.PROCESSING_VIDEO.value, 12, "Starting video processing")
-
-        video_service = VideoService()
-
-        def video_progress(step, progress):
-            status_map = {
-                "extracting_audio": (JobStatus.PROCESSING_VIDEO.value, "Extracting audio"),
-                "transcribing": (JobStatus.TRANSCRIBING.value, "Transcribing audio"),
-                "saving_transcript": (JobStatus.TRANSCRIBING.value, "Saving transcript"),
-                "creating_subtitles": (JobStatus.PROCESSING_VIDEO.value, "Creating subtitles"),
-                "adding_subtitles": (JobStatus.PROCESSING_VIDEO.value, "Adding subtitles to video"),
-                "extracting_frames": (JobStatus.PROCESSING_VIDEO.value, "Extracting frames"),
-                "complete": (JobStatus.PROCESSING_VIDEO.value, "Video processing complete"),
-            }
-            if step in status_map:
-                status, desc = status_map[step]
-                scaled_progress = int(12 + (progress * 0.38))
-                update_job_status(job_id, status, scaled_progress, desc)
-
-        with PhaseTimer(job_id, "video_processing", "Video processing pipeline") as timer:
-            result = video_service.process_video(video_path, video_progress)
-            transcript_path = result.transcript_json_path
-            frames_dir = result.frames_dir
-            timer.add_detail("transcript_path", transcript_path)
-            timer.add_detail("captioned_video", result.captioned_video_path)
-            timer.add_detail("duration_seconds", result.duration_seconds)
-            timer.add_detail("frames_dir", frames_dir)
-
-        transcript_text = ""
-        try:
-            with open(transcript_path, 'r') as f:
-                transcript_data = json.load(f)
-                transcript_text = transcript_data.get('text', '') if isinstance(transcript_data, dict) else str(transcript_data)
-                add_log_entry(job_id, "transcript", "info", "Transcript generated",
-                             details={"transcript_text": transcript_text[:8000] if len(transcript_text) > 8000 else transcript_text,
-                                     "total_length": len(transcript_text)})
-        except Exception as e:
-            add_log_entry(job_id, "transcript", "warning", f"Could not read transcript: {str(e)}")
-
-        update_job_status(job_id, JobStatus.ANALYZING.value, 40, "Analyzing transcript")
-
-        with PhaseTimer(job_id, "ai_analysis", "AI transcript analysis") as timer:
-            agent_service = AgentService()
-
-            def agent_progress(step, progress):
-                if step == "processing_chunks":
-                    update_job_status(job_id, JobStatus.ANALYZING.value, 45, "Processing transcript chunks")
-                elif step == "generating_summary":
-                    update_job_status(job_id, JobStatus.ANALYZING.value, 52, "Generating summary")
-                elif step == "complete":
-                    update_job_status(job_id, JobStatus.ANALYZING.value, 58, "Transcript analysis complete")
-
-            agent_service.process_transcript(transcript_path, agent_progress)
-
-            transcript_name = os.path.basename(transcript_path)
-            summary = agent_service.get_summary(transcript_name)
-            cost = agent_service.get_cost(transcript_name)
-            vehicle_info = agent_service.extract_vehicle_info(transcript_name)
-
-            timer.add_detail("cost", cost)
-            timer.add_detail("vehicle_info", vehicle_info)
-            timer.add_detail("summary", summary)
-
-        update_job_results(
-            job_id,
-            summary=summary,
-            make=vehicle_info.get("make"),
-            model=vehicle_info.get("model"),
-            year=vehicle_info.get("year"),
-            cost=cost,
-        )
-
-        condition_report_json, condition_score, valuation_result, cost = _run_vision_and_valuation(
-            job_id, frames_dir, vehicle_info, cost
-        )
-
-        complete_details = {
-            "total_cost": cost,
-            "vehicle": vehicle_info,
-            "condition_score": condition_score,
-        }
-        if valuation_result:
-            complete_details["bid_range"] = {
-                "low": valuation_result.bid_range_low,
-                "high": valuation_result.bid_range_high,
-            }
-            complete_details["market_value"] = {
-                "low": valuation_result.market_value_low,
-                "high": valuation_result.market_value_high,
-            }
-
-        total_duration = int((time.time() - total_start) * 1000)
-        add_log_entry(job_id, "complete", "success", "Processing completed successfully",
-                     duration_ms=total_duration, details=complete_details)
-
-        update_job_status(job_id, JobStatus.COMPLETE.value, 100, "Complete")
-
-    except Exception as e:
-        total_duration = int((time.time() - total_start) * 1000)
-        add_log_entry(job_id, "error", "failed", f"Processing failed: {str(e)}",
-                     duration_ms=total_duration,
-                     details={"error_type": type(e).__name__, "traceback": traceback.format_exc()})
-        update_job_status(job_id, JobStatus.FAILED.value, error=str(e))
-        raise
+    _run_pipeline(job_id, video_path, progress_base=12, progress_scale=0.38)

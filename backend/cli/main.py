@@ -6,7 +6,6 @@ Command-line interface for processing classic car videos and generating summarie
 """
 
 import os
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -15,9 +14,6 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.table import Table
 from rich.panel import Panel
-
-# Add parent to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.config import get_settings
 from app.services.video_service import VideoService
