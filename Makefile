@@ -1,4 +1,4 @@
-.PHONY: install install-dev test lint format typecheck docker-up docker-down requirements
+.PHONY: install install-dev test lint format typecheck check docker-up docker-down requirements
 
 install:
 	pip install -e .
@@ -20,6 +20,11 @@ format:
 
 typecheck:
 	mypy backend/app/
+
+check: lint format-check typecheck test
+
+format-check:
+	ruff format --check backend/
 
 docker-up:
 	docker compose up --build -d
