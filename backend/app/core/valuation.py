@@ -1,9 +1,15 @@
-import os
 import json
+import logging
 import re
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 from dataclasses import dataclass
+
 from openai import OpenAI
+
+from ..exceptions import ValuationError
+from .retry import openai_retry
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -32,17 +38,15 @@ class ValuationEngine:
     OUTPUT_COST_PER_TOKEN = 10.0 / 1e6
     SEARCH_COST_PER_CALL = 0.025
 
-    def __init__(self, model: str = "gpt-4o"):
+    def __init__(self, model: str = "gpt-4o", client: Optional[OpenAI] = None):
         self.model = model
-        self._client = None
+        self._client = client
 
     @property
     def client(self) -> OpenAI:
         if self._client is None:
-            api_key = os.environ.get("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError("OPENAI_API_KEY environment variable not set")
-            self._client = OpenAI(api_key=api_key)
+            from ..deps import get_openai_client
+            self._client = get_openai_client()
         return self._client
 
     def _get_condition_multiplier(self, score: float) -> Tuple[float, float]:
@@ -64,6 +68,7 @@ class ValuationEngine:
             low_mult[1] + frac * (high_mult[1] - low_mult[1]),
         )
 
+    @openai_retry
     def lookup_market_value(
         self,
         make: str,
@@ -88,7 +93,7 @@ class ValuationEngine:
             f'"recent_sales": ["<sale 1 description>", "<sale 2 description>"]}}'
         )
 
-        print(f"Searching web for market value of {vehicle_str}...")
+        logger.info("Searching web for market value of %s", vehicle_str)
 
         response = self.client.responses.create(
             model=self.model,
@@ -123,7 +128,7 @@ class ValuationEngine:
         )
         cost = token_cost + (search_calls * self.SEARCH_COST_PER_CALL)
 
-        print(f"Web search complete. {search_calls} searches performed. Cost: ${cost:.4f}")
+        logger.info("Web search complete. %d searches performed. Cost: $%.4f", search_calls, cost)
 
         parsed = self._parse_valuation_response(result_text)
 

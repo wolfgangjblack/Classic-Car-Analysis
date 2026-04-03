@@ -4,14 +4,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .config import get_settings
+from .config import get_settings, configure_logging
 from .models.db import init_db
 from .api import videos, jobs
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan handler"""
+    """Application lifespan handler."""
+    configure_logging()
     settings = get_settings()
 
     settings.ensure_directories()

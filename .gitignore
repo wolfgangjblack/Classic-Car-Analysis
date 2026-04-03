@@ -172,3 +172,5 @@ cython_debug/
 
 scratch/
 data/
+
+.DS_Store

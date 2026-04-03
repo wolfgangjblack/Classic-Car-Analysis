@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Classic Car Video Analyzer</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2">
 </head>
 <body>
     <div class="container">
@@ -146,6 +146,20 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <!-- Lightbox Modal -->
+    <div id="lightboxModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeLightbox()"></div>
+        <div class="lightbox-content">
+            <button class="modal-close lightbox-close" onclick="closeLightbox()">&times;</button>
+            <img id="lightboxImage" src="" alt="Evidence frame">
+            <p class="lightbox-caption" id="lightboxCaption"></p>
+        </div>
+    </div>
+
+    <!-- Hidden container for PDF generation -->
+    <div id="pdfContainer" style="position: absolute; left: -9999px; top: 0;"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
+    <script src="app.js?v=2"></script>
 </body>
 </html>

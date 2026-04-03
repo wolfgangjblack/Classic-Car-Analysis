@@ -1,27 +1,19 @@
 import json
+import shutil
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models.db import Job, JobStatus, get_engine, create_session_factory
+from ..deps import get_db
+from ..models.db import Job, JobStatus, SourceType
 from ..models.schemas import JobResponse, JobDetailResponse, JobListResponse, JobLogsResponse, LogEntry
 
 
 router = APIRouter()
-
-
-def get_db():
-    """Dependency to get database session"""
-    settings = get_settings()
-    engine = get_engine(settings.database_url)
-    SessionLocal = create_session_factory(engine)
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 @router.get("", response_model=JobListResponse)
@@ -151,6 +143,90 @@ async def get_job_summary(job_id: str, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/{job_id}/evidence/{filename}")
+async def get_evidence_frame(job_id: str, filename: str, db: Session = Depends(get_db)):
+    """Serve an evidence frame image for a job"""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    safe_filename = Path(filename).name
+    if safe_filename != filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    settings = get_settings()
+    frame_path = settings.evidence_dir / job_id / safe_filename
+    if not frame_path.exists():
+        raise HTTPException(status_code=404, detail="Evidence frame not found")
+
+    return FileResponse(
+        str(frame_path),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router.post("/{job_id}/retry")
+async def retry_job(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Retry a failed job by resetting it and re-queuing processing"""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status != JobStatus.FAILED.value:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only failed jobs can be retried. Current status: {job.status}",
+        )
+
+    job.status = JobStatus.PENDING.value
+    job.progress = 0
+    job.current_step = None
+    job.error = None
+    job.started_at = None
+    job.completed_at = None
+    job.logs = None
+    job.summary = None
+    job.condition_report = None
+    job.condition_score = None
+    job.market_value_low = None
+    job.market_value_high = None
+    job.bid_range_low = None
+    job.bid_range_high = None
+    job.valuation_notes = None
+    job.cost = 0.0
+    db.commit()
+
+    settings = get_settings()
+    evidence_path = settings.evidence_dir / job_id
+    if evidence_path.exists():
+        shutil.rmtree(str(evidence_path), ignore_errors=True)
+
+    if job.source_type == SourceType.URL.value:
+        from ..workers.tasks import process_url_task
+        background_tasks.add_task(process_url_task, job_id)
+    else:
+        from ..workers.tasks import process_video_task
+        background_tasks.add_task(process_video_task, job_id)
+
+    return JobResponse(
+        id=job.id,
+        source_type=job.source_type,
+        original_filename=job.original_filename,
+        status=job.status,
+        progress=job.progress,
+        current_step=job.current_step,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        error=job.error,
+    )
+
+
 @router.delete("/{job_id}")
 async def delete_job(job_id: str, db: Session = Depends(get_db)):
     """Delete or cancel a job"""
@@ -163,6 +239,11 @@ async def delete_job(job_id: str, db: Session = Depends(get_db)):
         job.status = JobStatus.CANCELLED.value
         db.commit()
         return {"message": "Job cancelled", "id": job_id}
+
+    settings = get_settings()
+    evidence_path = settings.evidence_dir / job_id
+    if evidence_path.exists():
+        shutil.rmtree(str(evidence_path), ignore_errors=True)
 
     db.delete(job)
     db.commit()

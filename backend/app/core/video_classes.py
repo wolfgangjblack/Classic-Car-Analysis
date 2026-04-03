@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 
 
@@ -21,6 +21,8 @@ class TranscriptData(BaseModel):
 
 
 class VideoProcessingResult(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     video_path: str
     captioned_video_path: Optional[str] = None
     audio_path: Optional[str] = None
@@ -28,6 +30,3 @@ class VideoProcessingResult(BaseModel):
     transcript_txt_path: Optional[str] = None
     frames_dir: Optional[str] = None
     duration_seconds: Optional[float] = None
-
-    class Config:
-        arbitrary_types_allowed = True

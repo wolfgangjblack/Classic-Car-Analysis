@@ -4,12 +4,18 @@ An AI-powered pipeline for analyzing classic car videos -- from YouTube URLs or 
 
 ## Project Overview
 
-This system processes videos of classic cars (typically auction walkarounds or dealer presentations) through a multi-stage AI pipeline:
+This system processes videos of classic cars (typically auction walkarounds or dealer presentations) and combines **three signal sources** to produce a comprehensive analysis:
 
-1. **Transcription** -- Whisper extracts speech-to-text with timestamps
-2. **Transcript Analysis** -- Multiple AI agents identify make/model/year, condition notes, history, and generate a summary
-3. **Vision Condition Analysis** -- GPT-4o examines extracted video frames to score exterior and interior quality (1-5 per area), tracking good and bad observations
-4. **Market Valuation** -- OpenAI web search looks up current blue book / auction values from Hagerty, Bring a Trailer, and Hemmings
+- **What was said** -- Whisper transcribes the audio; AI agents extract make/model/year, history, features, and verbal condition notes
+- **What the camera shows** -- GPT-4o inspects extracted video frames, scoring 8 condition areas (1-5 scale), flagging damage and highlights with supporting screenshot evidence
+- **What the market says** -- Web search pulls current prices from Hagerty, Bring a Trailer, Hemmings, and KBB; the condition score then adjusts the market range into a suggested starting bid
+
+The pipeline runs in five phases:
+
+1. **Transcription** -- Whisper extracts speech-to-text with word-level timestamps
+2. **Transcript Analysis** -- Multiple AI agents identify vehicle details and generate a written summary
+3. **Vision Condition Analysis** -- GPT-4o examines ~10 video frames, rates condition areas, and links each observation to the frame where it was most clearly visible
+4. **Market Valuation** -- OpenAI web search looks up current blue book and recent auction values
 5. **Bid Price Calculation** -- Condition score adjusts the market value to produce a suggested starting bid range
 
 ## Architecture
@@ -94,7 +100,9 @@ uvicorn app.main:app --reload
 1. Open http://localhost:3000 in your browser
 2. Either drag-and-drop a video file or enter a YouTube URL
 3. Watch the progress through each phase (download, transcription, analysis, vision inspection, valuation)
-4. View the full results: transcript summary, condition assessment with per-area scores, market value range, and suggested starting bid
+4. View the full results: transcript summary, condition assessment with evidence screenshots, market value range, and suggested starting bid
+5. Download: use the **Download** dropdown to export a Summary PDF (with evidence images and captions), processing logs, or both
+6. If a job fails, click **Retry** to reprocess it
 
 ![Example output showing condition assessment and market valuation](assets/output_ex.png)
 
@@ -133,6 +141,9 @@ python -m cli.main config
 | GET | `/api/jobs` | List all jobs |
 | GET | `/api/jobs/{id}` | Get job status and details |
 | GET | `/api/jobs/{id}/summary` | Get job summary, condition, valuation |
+| GET | `/api/jobs/{id}/logs` | Get processing logs |
+| GET | `/api/jobs/{id}/evidence/{filename}` | Serve an evidence frame image |
+| POST | `/api/jobs/{id}/retry` | Retry a failed job |
 | DELETE | `/api/jobs/{id}` | Delete/cancel a job |
 | GET | `/api/costs` | Get cost report |
 | GET | `/health` | Health check |
@@ -205,7 +216,7 @@ After transcript analysis, the pipeline runs two additional phases:
 
 ### Vision Condition Analysis
 
-Selects up to 10 evenly-spaced frames from the extracted video frames, encodes them as base64 JPEG, and sends them in a single multi-image request to GPT-4o. The model examines every image and rates 8 condition areas:
+Selects up to 10 evenly-spaced frames from the video, encodes them as base64 JPEG, and sends them in a single multi-image request to GPT-4o. The model examines every image, rates 8 condition areas, and links each observation back to the specific frame where it was spotted. These **evidence frames** are copied to a per-job directory and served to the frontend as clickable thumbnails alongside each observation, so a reviewer can see exactly what the model is referring to.
 
 | Area | Weight | What the model looks for |
 |------|--------|--------------------------|
@@ -218,7 +229,7 @@ Selects up to 10 evenly-spaced frames from the extracted video frames, encodes t
 | Dashboard | 1.0x | Cracks, warping, gauge clarity |
 | Carpet & Headliner | 1.0x | Sagging, staining, wear patterns |
 
-Each area is scored 1-5 (1=poor, 5=excellent). The overall score is a weighted average with exterior areas weighted 1.5x (more important for auction presentation). The model also produces running lists of positive and negative observations.
+Each area is scored 1-5 (1=poor, 5=excellent). The overall score is a weighted average with exterior areas weighted 1.5x (more important for auction presentation). The model produces running lists of positive and negative observations, each backed by the specific video frame that shows it.
 
 ### Market Valuation & Bid Calculation
 
@@ -243,28 +254,69 @@ The system tracks API usage costs for each processed video. View costs via:
 
 ## Development
 
+### Setup
+
+```bash
+# Install the package in editable mode with dev dependencies
+make install-dev
+
+# Or manually:
+pip install -e ".[dev]"
+```
+
 ### Running Tests
 
 ```bash
-cd backend
-pytest
+make test
+
+# Or directly:
+cd backend && python -m pytest
 ```
 
-### Code Style
+### Linting & Formatting
 
 ```bash
-# Format code
-black backend/
+# Check for issues
+make lint
 
-# Type checking
-mypy backend/
+# Auto-format
+make format
 ```
+
+### Optional: Local Whisper
+
+By default, the pipeline uses OpenAI's Whisper API for transcription. To use a local Whisper model instead (requires ~8GB for PyTorch):
+
+```bash
+pip install -e ".[local-whisper]"
+```
+
+### Docker
+
+```bash
+make docker-up    # Build and start all services
+make docker-down  # Stop all services
+```
+
+## Production Considerations
+
+This project is a **proof-of-concept** demonstrating a multi-modal AI analysis pipeline. The following concerns are intentionally deferred to the consumer application once implementation is properly scoped:
+
+- **Authentication and authorization** -- to be handled by the consumer app or API gateway based on deployment requirements
+- **Rate limiting** -- applied at the API gateway or consumer app layer to match traffic patterns
+- **Database** -- SQLite is used for simplicity; a production deployment would migrate to PostgreSQL for concurrent write support
+- **Task queue** -- FastAPI BackgroundTasks are used for processing; a production system would use Celery or RQ with Redis for crash recovery and horizontal scaling
+- **CI/CD** -- GitHub Actions for lint, test, and Docker image builds would be added for team workflows
+- **Observability** -- structured JSON logging, OpenTelemetry tracing, and Prometheus metrics for production monitoring
 
 ## Future Development
 
 - [x] Pricing model integration (market valuation via web search)
 - [x] Bidding recommendation system (condition-adjusted bid range)
 - [x] Enhanced visual analysis of vehicle condition (GPT-4o vision)
+- [x] Evidence-linked observations with screenshot support
+- [x] PDF report export with evidence images and captions
+- [x] Job retry on failure
 - [ ] Dealer guidance for video capture
 - [ ] VIN and CarFax API integration
 - [ ] Multi-language support

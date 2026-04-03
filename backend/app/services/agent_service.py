@@ -1,18 +1,21 @@
 import os
 import json
-import re
 from pathlib import Path
 from typing import Optional, Dict, Callable
 
+from openai import OpenAI
+
 from ..config import get_settings
+from ..deps import get_openai_client
 from ..core.agents import AgentPipeline
 
 
 class AgentService:
     """Service wrapper for agent pipeline"""
 
-    def __init__(self):
+    def __init__(self, client: Optional[OpenAI] = None):
         self.settings = get_settings()
+        self._client = client
         self._pipeline = None
 
     @property
@@ -20,7 +23,8 @@ class AgentService:
         """Lazy-load the agent pipeline"""
         if self._pipeline is None:
             self._pipeline = AgentPipeline(
-                agents_dir=str(self.settings.agent_prompts_dir)
+                agents_dir=str(self.settings.agent_prompts_dir),
+                client=self._client or get_openai_client(),
             )
         return self._pipeline
 
@@ -42,7 +46,7 @@ class AgentService:
         result = self.pipeline.process_transcript(
             transcript_path,
             parallel=True,
-            verbose=True,
+            return_results=True,
             progress_callback=progress_callback
         )
         return result

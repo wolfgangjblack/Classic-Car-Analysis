@@ -1,15 +1,19 @@
 import os
 from typing import Dict, Optional
 
+from openai import OpenAI
+
 from ..config import get_settings
+from ..deps import get_openai_client
 from ..core.vision_analyzer import VisionAnalyzer, ConditionResult
 
 
 class VisionService:
     """Service wrapper for vision-based condition analysis."""
 
-    def __init__(self):
+    def __init__(self, client: Optional[OpenAI] = None):
         self.settings = get_settings()
+        self._client = client
         self._analyzer = None
 
     @property
@@ -22,6 +26,7 @@ class VisionService:
                 model=self.settings.vision_model,
                 max_frames=self.settings.max_vision_frames,
                 prompt_path=prompt_path,
+                client=self._client or get_openai_client(),
             )
         return self._analyzer
 

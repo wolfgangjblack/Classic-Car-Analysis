@@ -1,21 +1,29 @@
-import os
-import json
 import base64
 import glob
-from typing import Dict, List, Optional, Tuple
+import json
+import logging
+import os
+from typing import Dict, List, Optional
 from dataclasses import dataclass, field
+
 from openai import OpenAI
+
+from ..exceptions import VisionAnalysisError
+from .retry import openai_retry
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class ConditionResult:
-    observations: Dict[str, List[str]]
+    observations: Dict[str, List]
     area_scores: Dict[str, Dict]
     overall_score: float
     overall_assessment: str
     images_analyzed: int
     exterior_images_found: int
     interior_images_found: int
+    frame_paths: List[str] = field(default_factory=list)
     cost: float = 0.0
 
     def to_dict(self) -> dict:
@@ -28,6 +36,17 @@ class ConditionResult:
             "exterior_images_found": self.exterior_images_found,
             "interior_images_found": self.interior_images_found,
         }
+
+    def get_evidence_frame_paths(self) -> Dict[int, str]:
+        """Return a mapping of observation index -> source frame path for all observations with image_index."""
+        evidence = {}
+        for category in ("good", "bad"):
+            for obs in self.observations.get(category, []):
+                if isinstance(obs, dict) and "image_index" in obs:
+                    idx = obs["image_index"]
+                    if 1 <= idx <= len(self.frame_paths):
+                        evidence[idx] = self.frame_paths[idx - 1]
+        return evidence
 
 
 class VisionAnalyzer:
@@ -50,20 +69,19 @@ class VisionAnalyzer:
         model: str = "gpt-4o",
         max_frames: int = 10,
         prompt_path: Optional[str] = None,
+        client: Optional[OpenAI] = None,
     ):
         self.model = model
         self.max_frames = max_frames
         self.prompt_path = prompt_path
-        self._client = None
+        self._client = client
         self._prompt_template = None
 
     @property
     def client(self) -> OpenAI:
         if self._client is None:
-            api_key = os.environ.get("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError("OPENAI_API_KEY environment variable not set")
-            self._client = OpenAI(api_key=api_key)
+            from ..deps import get_openai_client
+            self._client = get_openai_client()
         return self._client
 
     @property
@@ -124,12 +142,16 @@ class VisionAnalyzer:
                 "type": "text",
                 "text": (
                     f"I have {len(frames)} images extracted from a video of this {vehicle_str}. "
+                    f"They are numbered Image 1 through Image {len(frames)} in the order below. "
                     f"Please analyze every image carefully for condition assessment."
                 ),
             }
         ]
 
         for i, frame_path in enumerate(frames):
+            content_parts.append(
+                {"type": "text", "text": f"--- Image {i + 1} ---"}
+            )
             b64 = self.encode_frame(frame_path)
             ext = os.path.splitext(frame_path)[1].lower()
             mime = "image/png" if ext == ".png" else "image/jpeg"
@@ -153,7 +175,7 @@ class VisionAnalyzer:
         text = raw_text.strip()
         if text.startswith("```"):
             lines = text.split("\n")
-            lines = lines[1:]  # remove opening fence
+            lines = lines[1:]
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]
             text = "\n".join(lines)
@@ -173,25 +195,38 @@ class VisionAnalyzer:
             return 0.0
         return round(weighted_sum / total_weight, 2)
 
+    def _resolve_evidence_frames(
+        self, observations: Dict[str, List], frame_paths: List[str]
+    ) -> Dict[str, List]:
+        """Add evidence_frame filename to each observation that has a valid image_index."""
+        resolved = {}
+        for category in ("good", "bad"):
+            items = observations.get(category, [])
+            resolved_items = []
+            for obs in items:
+                if isinstance(obs, dict):
+                    idx = obs.get("image_index", 0)
+                    if 1 <= idx <= len(frame_paths):
+                        obs["evidence_frame"] = os.path.basename(frame_paths[idx - 1])
+                    resolved_items.append(obs)
+                elif isinstance(obs, str):
+                    resolved_items.append({"text": obs, "image_index": 0, "area": "general"})
+                else:
+                    resolved_items.append(obs)
+            resolved[category] = resolved_items
+        return resolved
+
+    @openai_retry
     def analyze_frames(
         self, frames_dir: str, vehicle_info: Dict[str, str]
     ) -> ConditionResult:
-        """
-        Run the full vision analysis pipeline.
-
-        Args:
-            frames_dir: Path to directory containing extracted frames
-            vehicle_info: Dict with make, model, year keys
-
-        Returns:
-            ConditionResult with scores, observations, and cost
-        """
+        """Run the full vision analysis pipeline."""
         frames = self.select_frames(frames_dir)
-        print(f"Selected {len(frames)} frames for vision analysis")
+        logger.info("Selected %d frames for vision analysis", len(frames))
 
         messages = self.build_messages(frames, vehicle_info)
 
-        print(f"Sending {len(frames)} images to {self.model} for condition analysis...")
+        logger.info("Sending %d images to %s for condition analysis", len(frames), self.model)
         completion = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -206,7 +241,7 @@ class VisionAnalyzer:
             + completion.usage.completion_tokens * self.OUTPUT_COST_PER_TOKEN
         )
 
-        print(f"Vision analysis complete. Cost: ${cost:.4f}")
+        logger.info("Vision analysis complete. Cost: $%.4f", cost)
 
         parsed = self._parse_response(raw)
 
@@ -215,13 +250,18 @@ class VisionAnalyzer:
         if parsed.get("overall_score", 0) > 0:
             overall = parsed["overall_score"]
 
+        observations = self._resolve_evidence_frames(
+            parsed.get("observations", {"good": [], "bad": []}), frames
+        )
+
         return ConditionResult(
-            observations=parsed.get("observations", {"good": [], "bad": []}),
+            observations=observations,
             area_scores=area_scores,
             overall_score=overall,
             overall_assessment=parsed.get("overall_assessment", ""),
             images_analyzed=parsed.get("images_analyzed", len(frames)),
             exterior_images_found=parsed.get("exterior_images_found", 0),
             interior_images_found=parsed.get("interior_images_found", 0),
+            frame_paths=frames,
             cost=cost,
         )

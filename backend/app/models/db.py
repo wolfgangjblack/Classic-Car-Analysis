@@ -1,6 +1,7 @@
 import uuid
-from datetime import datetime
-from sqlalchemy import create_engine, Column, String, Integer, Float, Text, DateTime, Enum as SQLEnum, text as sa_text
+from datetime import datetime, timezone
+
+from sqlalchemy import create_engine, inspect, Column, String, Integer, Float, Text, DateTime, text as sa_text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from enum import Enum
 
@@ -35,7 +36,7 @@ class Job(Base):
     status = Column(String, default=JobStatus.PENDING.value)
     progress = Column(Integer, default=0)
     current_step = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
@@ -100,11 +101,10 @@ def _migrate_add_columns(engine):
         ]
     }
 
+    inspector = inspect(engine)
     with engine.connect() as conn:
         for table, columns in new_columns.items():
-            existing = {
-                row[1] for row in conn.execute(sa_text(f"PRAGMA table_info({table})"))
-            }
+            existing = {col["name"] for col in inspector.get_columns(table)}
             for col_name, col_type in columns:
                 if col_name not in existing:
                     conn.execute(
