@@ -43,4 +43,5 @@ def get_db():
 def get_db_session() -> Session:
     """Get a database session for non-FastAPI contexts (background tasks, CLI)."""
     SessionLocal = _get_session_factory()
-    return SessionLocal()
+    session: Session = SessionLocal()
+    return session

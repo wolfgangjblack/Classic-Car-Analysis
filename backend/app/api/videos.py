@@ -20,6 +20,8 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile = Fil
     settings = get_settings()
 
     valid_extensions = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in valid_extensions:
         raise HTTPException(

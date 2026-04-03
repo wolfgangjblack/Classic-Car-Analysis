@@ -28,6 +28,8 @@ class Agent(ABC):
         self.temperature = temperature
         self.llm = llm
         self._client = client
+        self.name: Optional[str] = None
+        self.data: Dict[str, Any] = {}
 
     @property
     def client(self) -> OpenAI:
@@ -98,7 +100,7 @@ class JsonicAgent(Agent):
         data: Optional[Dict] = None,
         client: Optional[OpenAI] = None,
     ):
-        super().__init__(system_prompt=system_prompt, client=client)
+        super().__init__(system_prompt=system_prompt or "", client=client)
         self.name = name
         self.data = data or {}
         self.token_cost = 0
@@ -137,7 +139,7 @@ class ChatAgent(Agent):
         data: Optional[Dict] = None,
         client: Optional[OpenAI] = None,
     ):
-        super().__init__(system_prompt=system_prompt, client=client)
+        super().__init__(system_prompt=system_prompt or "", client=client)
         self.name = name
         self.data = data or {}
         self.token_cost = 0
@@ -162,9 +164,9 @@ class AgentPipeline:
             agents_dir: Directory containing agent prompt files
             client: Shared OpenAI client (falls back to deps.get_openai_client)
         """
-        self.agents = {"processing": [], "summarizing": []}
-        self.data = {}
-        self.summaries = {}
+        self.agents: Dict[str, List[Agent]] = {"processing": [], "summarizing": []}
+        self.data: Dict[str, Any] = {}
+        self.summaries: Dict[str, str] = {}
         self.total_cost = 0.0
         self._client = client
 

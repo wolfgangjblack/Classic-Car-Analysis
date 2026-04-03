@@ -5,6 +5,7 @@ import shutil
 import time
 import traceback
 from datetime import datetime, timezone
+from typing import Any, Optional
 
 from ..config import get_settings
 from ..deps import get_db_session
@@ -18,14 +19,21 @@ from ..services.vision_service import VisionService
 logger = logging.getLogger(__name__)
 
 
-def add_log_entry(job_id: str, phase: str, status: str, message: str, duration_ms: int = None, details: dict = None):
+def add_log_entry(
+    job_id: str,
+    phase: str,
+    status: str,
+    message: str,
+    duration_ms: Optional[int] = None,
+    details: Optional[dict[str, Any]] = None,
+):
     """Add a log entry for a job"""
     db = get_db_session()
     try:
         job = db.query(Job).filter(Job.id == job_id).first()
         if job:
             logs = json.loads(job.logs) if job.logs else []
-            entry = {
+            entry: dict[str, Any] = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "phase": phase,
                 "status": status,
@@ -42,7 +50,13 @@ def add_log_entry(job_id: str, phase: str, status: str, message: str, duration_m
         db.close()
 
 
-def update_job_status(job_id: str, status: str, progress: int = None, current_step: str = None, error: str = None):
+def update_job_status(
+    job_id: str,
+    status: str,
+    progress: Optional[int] = None,
+    current_step: Optional[str] = None,
+    error: Optional[str] = None,
+):
     """Update job status in database"""
     db = get_db_session()
     try:
@@ -66,18 +80,18 @@ def update_job_status(job_id: str, status: str, progress: int = None, current_st
 
 def update_job_results(
     job_id: str,
-    summary: str = None,
-    make: str = None,
-    model: str = None,
-    year: str = None,
-    cost: float = None,
-    condition_report: str = None,
-    condition_score: float = None,
-    market_value_low: float = None,
-    market_value_high: float = None,
-    bid_range_low: float = None,
-    bid_range_high: float = None,
-    valuation_notes: str = None,
+    summary: Optional[str] = None,
+    make: Optional[str] = None,
+    model: Optional[str] = None,
+    year: Optional[str] = None,
+    cost: Optional[float] = None,
+    condition_report: Optional[str] = None,
+    condition_score: Optional[float] = None,
+    market_value_low: Optional[float] = None,
+    market_value_high: Optional[float] = None,
+    bid_range_low: Optional[float] = None,
+    bid_range_high: Optional[float] = None,
+    valuation_notes: Optional[str] = None,
 ):
     """Update job with results. Only updates fields that are not None."""
     db = get_db_session()
@@ -120,8 +134,8 @@ class PhaseTimer:
         self.job_id = job_id
         self.phase = phase
         self.message = message
-        self.start_time = None
-        self.details = {}
+        self.start_time: Optional[float] = None
+        self.details: dict[str, Any] = {}
 
     def __enter__(self):
         self.start_time = time.time()

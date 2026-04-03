@@ -1,7 +1,7 @@
 import os
 import re
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 import yt_dlp
 
@@ -15,7 +15,9 @@ class VideoDownloader:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def download(self, url: str, job_id: str, progress_callback: Optional[callable] = None) -> Tuple[str, str]:
+    def download(
+        self, url: str, job_id: str, progress_callback: Optional[Callable[..., None]] = None
+    ) -> Tuple[str, str]:
         """
         Download video from YouTube or direct URL.
 

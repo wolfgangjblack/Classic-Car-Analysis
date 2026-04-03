@@ -248,7 +248,9 @@ class VideoProcessingPipeline:
                         start_formatted = self.format_timestamp(start_time)
                         end_formatted = self.format_timestamp(end_time)
 
-                        text = " ".join(word.word for word in group["words"])
+                        text = " ".join(
+                            w.word for w in group["words"]  # type: ignore[attr-defined]
+                        )
 
                         srt_file.write(f"{subtitle_index}\n")
                         srt_file.write(f"{start_formatted} --> {end_formatted}\n")
@@ -331,9 +333,11 @@ class VideoProcessingPipeline:
             video.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             ret, frame = video.read()
             if ret:
-                time_pos = frame_idx / fps
-                formatted_time = self.format_timestamp_readable(time_pos)
-                output_path = os.path.join(output_dir, f"frame_{time_pos:.3f}_{formatted_time.replace(':', '-')}.jpg")
+                time_pos_sec = frame_idx / fps
+                formatted_time = self.format_timestamp_readable(time_pos_sec)
+                output_path = os.path.join(
+                    output_dir, f"frame_{time_pos_sec:.3f}_{formatted_time.replace(':', '-')}.jpg"
+                )
                 cv2.imwrite(output_path, frame)
 
         video.release()
@@ -377,8 +381,9 @@ class VideoProcessingPipeline:
             progress_callback("adding_subtitles", 80)
         logger.info("Adding subtitles to create captioned video")
         captioned_result = self.add_subtitles_to_video(video_path, subtitle_path, captioned_video_path)
+        captioned_video_path_out: Optional[str] = captioned_video_path
         if not captioned_result:
-            captioned_video_path = None
+            captioned_video_path_out = None
             logger.warning("Skipping captioned video (subtitle burning failed)")
 
         if progress_callback:
@@ -388,7 +393,7 @@ class VideoProcessingPipeline:
 
         result = VideoProcessingResult(
             video_path=video_path,
-            captioned_video_path=captioned_video_path if captioned_result else None,
+            captioned_video_path=captioned_video_path_out,
             audio_path=audio_path,
             transcript_json_path=json_path,
             transcript_txt_path=txt_path,

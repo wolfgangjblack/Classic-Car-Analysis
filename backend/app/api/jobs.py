@@ -51,7 +51,7 @@ async def list_jobs(
     )
 
 
-def parse_logs(logs_json: str) -> list:
+def parse_logs(logs_json: Optional[str]) -> list:
     """Parse logs JSON string into list of LogEntry"""
     if not logs_json:
         return []

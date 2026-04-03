@@ -14,7 +14,7 @@ class VisionService:
     def __init__(self, client: Optional[OpenAI] = None):
         self.settings = get_settings()
         self._client = client
-        self._analyzer = None
+        self._analyzer: Optional[VisionAnalyzer] = None
 
     @property
     def analyzer(self) -> VisionAnalyzer:

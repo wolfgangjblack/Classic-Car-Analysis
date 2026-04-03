@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
@@ -74,7 +74,7 @@ class VisionAnalyzer:
         self.max_frames = max_frames
         self.prompt_path = prompt_path
         self._client = client
-        self._prompt_template = None
+        self._prompt_template: Optional[str] = None
 
     @property
     def client(self) -> OpenAI:
@@ -130,7 +130,7 @@ class VisionAnalyzer:
         with open(frame_path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
 
-    def build_messages(self, frames: List[str], vehicle_info: Dict[str, str]) -> List[dict]:
+    def build_messages(self, frames: List[str], vehicle_info: Dict[str, str]) -> List[Dict[str, Any]]:
         """Build the multi-image chat message for GPT-4o."""
         vehicle_str = (
             f"{vehicle_info.get('year', 'Unknown')} "
@@ -158,7 +158,7 @@ class VisionAnalyzer:
             content_parts.append(
                 {
                     "type": "image_url",
-                    "image_url": {
+                    "image_url": {  # type: ignore[dict-item]
                         "url": f"data:{mime};base64,{b64}",
                         "detail": "high",
                     },
@@ -170,7 +170,7 @@ class VisionAnalyzer:
             {"role": "user", "content": content_parts},
         ]
 
-    def _parse_response(self, raw_text: str) -> dict:
+    def _parse_response(self, raw_text: str) -> Dict[str, Any]:
         """Extract JSON from the model response, handling markdown fences."""
         text = raw_text.strip()
         if text.startswith("```"):
@@ -179,7 +179,8 @@ class VisionAnalyzer:
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]
             text = "\n".join(lines)
-        return json.loads(text)
+        result: Dict[str, Any] = json.loads(text)
+        return result
 
     def _compute_overall_score(self, area_scores: Dict[str, Dict]) -> float:
         """Weighted average of visible area scores."""
@@ -223,7 +224,7 @@ class VisionAnalyzer:
         messages = self.build_messages(frames, vehicle_info)
 
         logger.info("Sending %d images to %s for condition analysis", len(frames), self.model)
-        completion = self.client.chat.completions.create(
+        completion = self.client.chat.completions.create(  # type: ignore[call-overload]
             model=self.model,
             messages=messages,
             max_tokens=2000,
@@ -231,10 +232,12 @@ class VisionAnalyzer:
             response_format={"type": "json_object"},
         )
 
-        raw = completion.choices[0].message.content
+        raw = completion.choices[0].message.content or ""
+        usage = completion.usage
         cost = (
-            completion.usage.prompt_tokens * self.INPUT_COST_PER_TOKEN
-            + completion.usage.completion_tokens * self.OUTPUT_COST_PER_TOKEN
+            (usage.prompt_tokens * self.INPUT_COST_PER_TOKEN + usage.completion_tokens * self.OUTPUT_COST_PER_TOKEN)
+            if usage
+            else 0.0
         )
 
         logger.info("Vision analysis complete. Cost: $%.4f", cost)

@@ -1,5 +1,5 @@
 import os
-from typing import Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from openai import OpenAI
 
@@ -14,7 +14,7 @@ class AgentService:
     def __init__(self, client: Optional[OpenAI] = None):
         self.settings = get_settings()
         self._client = client
-        self._pipeline = None
+        self._pipeline: Optional[AgentPipeline] = None
 
     @property
     def pipeline(self) -> AgentPipeline:
@@ -26,7 +26,7 @@ class AgentService:
             )
         return self._pipeline
 
-    def process_transcript(self, transcript_path: str, progress_callback: Optional[Callable] = None) -> Dict:
+    def process_transcript(self, transcript_path: str, progress_callback: Optional[Callable[..., None]] = None) -> Any:
         """
         Process a transcript and generate summary.
 
@@ -49,10 +49,11 @@ class AgentService:
     def get_cost(self, transcript_name: str) -> float:
         """Get processing cost for a transcript"""
         if transcript_name in self.pipeline.data:
-            return self.pipeline.data[transcript_name].get("token_costs", 0.0)
+            cost: float = self.pipeline.data[transcript_name].get("token_costs", 0.0)
+            return cost
         return 0.0
 
-    def extract_vehicle_info(self, transcript_name: str) -> Dict:
+    def extract_vehicle_info(self, transcript_name: str) -> Dict[str, Any]:
         """
         Extract vehicle information from processing results.
 

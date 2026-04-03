@@ -14,7 +14,7 @@ class VideoService:
     def __init__(self, client: Optional[OpenAI] = None):
         self.settings = get_settings()
         self._client = client
-        self._pipeline = None
+        self._pipeline: Optional[VideoProcessingPipeline] = None
 
     @property
     def pipeline(self) -> VideoProcessingPipeline:

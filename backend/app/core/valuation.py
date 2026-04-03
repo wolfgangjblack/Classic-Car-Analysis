@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from openai import OpenAI
 
@@ -122,9 +122,11 @@ class ValuationEngine:
                                         }
                                     )
 
+        usage = response.usage
         token_cost = (
-            response.usage.input_tokens * self.INPUT_COST_PER_TOKEN
-            + response.usage.output_tokens * self.OUTPUT_COST_PER_TOKEN
+            (usage.input_tokens * self.INPUT_COST_PER_TOKEN + usage.output_tokens * self.OUTPUT_COST_PER_TOKEN)
+            if usage
+            else 0.0
         )
         cost = token_cost + (search_calls * self.SEARCH_COST_PER_CALL)
 
@@ -140,12 +142,13 @@ class ValuationEngine:
             cost,
         )
 
-    def _parse_valuation_response(self, text: str) -> dict:
+    def _parse_valuation_response(self, text: str) -> Dict[str, Any]:
         """Extract market value data from the response."""
         try:
             json_match = re.search(r"\{[^{}]*\"market_value_low\"[^{}]*\}", text, re.DOTALL)
             if json_match:
-                return json.loads(json_match.group())
+                result: Dict[str, Any] = json.loads(json_match.group())
+                return result
         except (json.JSONDecodeError, AttributeError):
             pass
 
