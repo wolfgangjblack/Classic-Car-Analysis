@@ -249,7 +249,8 @@ class VideoProcessingPipeline:
                         end_formatted = self.format_timestamp(end_time)
 
                         text = " ".join(
-                            w.word for w in group["words"]  # type: ignore[attr-defined]
+                            w.word
+                            for w in group["words"]  # type: ignore[attr-defined]
                         )
 
                         srt_file.write(f"{subtitle_index}\n")
